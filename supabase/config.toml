@@ -1,0 +1,13 @@
+project_id = "tmzljbqiigltcspwsehj"
+
+[functions.generate-drafts]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false
+
+[functions.process-scheduled-emails]
+verify_jwt = false
+
+[functions.send-all-approved]
+verify_jwt = false
