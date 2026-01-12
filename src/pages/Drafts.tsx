@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
@@ -19,7 +21,9 @@ import {
   Filter,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Trash2,
+  Pen
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,10 +46,29 @@ export default function Drafts() {
   const [editedSubject, setEditedSubject] = useState('');
   const [editedBody, setEditedBody] = useState('');
   const [expandedContacts, setExpandedContacts] = useState<Set<string>>(new Set());
+  const [signatures, setSignatures] = useState<any[]>([]);
+  const [includeSignature, setIncludeSignature] = useState(true);
+  const [selectedSignatureId, setSelectedSignatureId] = useState<string>('');
 
   useEffect(() => {
     fetchData();
+    fetchSignatures();
   }, []);
+
+  const fetchSignatures = async () => {
+    const { data } = await supabase
+      .from('email_signatures')
+      .select('*')
+      .order('is_default', { ascending: false });
+    
+    if (data) {
+      setSignatures(data);
+      const defaultSig = data.find((s: any) => s.is_default);
+      if (defaultSig) {
+        setSelectedSignatureId(defaultSig.id);
+      }
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -136,6 +159,8 @@ export default function Drafts() {
       .update({
         edited_subject: editedSubject,
         edited_body: editedBody,
+        include_signature: includeSignature,
+        signature_id: includeSignature && selectedSignatureId ? selectedSignatureId : null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', editingDraft.id);
@@ -145,6 +170,35 @@ export default function Drafts() {
     } else {
       toast.success('Changes saved!');
       setEditingDraft(null);
+      fetchData();
+    }
+  };
+
+  const getSignatureContent = (signatureId: string) => {
+    const signature = signatures.find((s: any) => s.id === signatureId);
+    if (!signature) return '';
+    // Build signature: content first, then image at bottom
+    let sigContent = signature.content;
+    if (signature.image_url) {
+      sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
+    }
+    return sigContent;
+  };
+
+  const deleteDraft = async (draftId: string) => {
+    if (!confirm('Are you sure you want to delete this draft? This action cannot be undone.')) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from('email_drafts')
+      .delete()
+      .eq('id', draftId);
+
+    if (error) {
+      toast.error('Failed to delete draft');
+    } else {
+      toast.success('Draft deleted!');
       fetchData();
     }
   };
@@ -303,7 +357,7 @@ export default function Drafts() {
   return (
     <MainLayout>
       <div className="space-y-8">
-        <div className="flex items-center justify-between animate-fade-in">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 rounded-lg bg-primary/10">
@@ -313,12 +367,12 @@ export default function Drafts() {
                 Review
               </span>
             </div>
-            <h1 className="text-3xl font-serif font-semibold text-foreground tracking-tight">Email Drafts</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-2xl sm:text-3xl font-serif font-semibold text-foreground tracking-tight">Email Drafts</h1>
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
               Review, edit, and approve AI-generated email drafts
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             {drafts.filter(d => d.status === 'approved' && d.draft_type === 'first_outreach').length > 0 && (
               <Button 
                 variant="gold" 
@@ -338,9 +392,9 @@ export default function Drafts() {
 
         {/* Generation Controls */}
         <Card className="bg-card border-border">
-          <CardContent className="p-6">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="flex-1 min-w-[200px]">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-4">
+              <div className="flex-1 w-full sm:min-w-[200px]">
                 <label className="text-sm font-medium text-foreground mb-2 block">
                   Select Template
                 </label>
@@ -355,7 +409,7 @@ export default function Drafts() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex-1 min-w-[200px]">
+              <div className="flex-1 w-full sm:min-w-[200px]">
                 <label className="text-sm font-medium text-foreground mb-2 block">
                   Send From
                 </label>
@@ -389,11 +443,11 @@ export default function Drafts() {
         </Card>
 
         {/* Filters */}
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-muted-foreground" />
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[140px] bg-input border-border">
+              <SelectTrigger className="w-full sm:w-[140px] bg-input border-border">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -406,7 +460,7 @@ export default function Drafts() {
             </Select>
           </div>
           <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="w-[160px] bg-input border-border">
+            <SelectTrigger className="w-full sm:w-[160px] bg-input border-border">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -464,28 +518,31 @@ export default function Drafts() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                       <span className="text-sm text-muted-foreground">
                         {approvedCount}/3 approved
                       </span>
-                      {allApproved && (
-                        <Button 
-                          variant="gold" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            sendApprovedDrafts(contactId);
-                          }}
-                        >
-                          <Send className="w-4 h-4 mr-1" />
-                          Send
-                        </Button>
-                      )}
-                      {isExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                      )}
+                      <div className="flex items-center gap-2">
+                        {allApproved && (
+                          <Button 
+                            variant="gold" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              sendApprovedDrafts(contactId);
+                            }}
+                            className="text-xs sm:text-sm"
+                          >
+                            <Send className="w-4 h-4 mr-1" />
+                            Send
+                          </Button>
+                        )}
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -506,7 +563,7 @@ export default function Drafts() {
                                 </Badge>
                                 {getStatusBadge(draft.status)}
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
                                 <Dialog>
                                   <DialogTrigger asChild>
                                     <Button 
@@ -516,17 +573,19 @@ export default function Drafts() {
                                         setEditingDraft(draft);
                                         setEditedSubject(draft.edited_subject || draft.subject);
                                         setEditedBody(draft.edited_body || draft.body);
+                                        setIncludeSignature((draft as any).include_signature !== false);
+                                        setSelectedSignatureId((draft as any).signature_id || '');
                                       }}
                                     >
                                       <Edit className="w-4 h-4 mr-1" />
                                       Edit
                                     </Button>
                                   </DialogTrigger>
-                                  <DialogContent className="max-w-2xl bg-card border-border">
+                                  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border">
                                     <DialogHeader>
                                       <DialogTitle className="text-foreground">Edit Draft</DialogTitle>
                                     </DialogHeader>
-                                    <div className="space-y-4 mt-4">
+                                    <div className="space-y-4 mt-4 pr-2">
                                       <div>
                                         <label className="text-sm font-medium text-foreground mb-2 block">
                                           Subject
@@ -544,8 +603,83 @@ export default function Drafts() {
                                         <Textarea
                                           value={editedBody}
                                           onChange={(e) => setEditedBody(e.target.value)}
-                                          className="min-h-[300px] bg-input border-border"
+                                          className="min-h-[250px] max-h-[400px] bg-input border-border resize-y overflow-y-auto"
                                         />
+                                      </div>
+                                      <div className="space-y-4 p-4 bg-secondary/30 rounded-lg border border-border">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <Pen className="w-4 h-4 text-muted-foreground" />
+                                            <Label htmlFor="include-signature" className="text-sm font-medium text-foreground cursor-pointer">
+                                              Include Email Signature
+                                            </Label>
+                                          </div>
+                                          <Switch
+                                            id="include-signature"
+                                            checked={includeSignature}
+                                            onCheckedChange={setIncludeSignature}
+                                          />
+                                        </div>
+                                        {includeSignature && (
+                                          <>
+                                            {signatures.length === 0 ? (
+                                              <div className="p-4 bg-background rounded border border-border">
+                                                <p className="text-sm text-muted-foreground mb-3">
+                                                  No signatures created yet. Create a signature first to use it in emails.
+                                                </p>
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => {
+                                                    window.open('/signatures', '_blank');
+                                                  }}
+                                                >
+                                                  <Pen className="w-4 h-4 mr-2" />
+                                                  Go to Signatures Page
+                                                </Button>
+                                              </div>
+                                            ) : (
+                                              <div>
+                                                <Label className="text-sm font-medium text-foreground mb-2 block">
+                                                  Select Signature
+                                                </Label>
+                                                <Select value={selectedSignatureId} onValueChange={setSelectedSignatureId}>
+                                                  <SelectTrigger className="bg-input border-border">
+                                                    <SelectValue placeholder="Select signature" />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    {signatures.map((sig: any) => (
+                                                      <SelectItem key={sig.id} value={sig.id}>
+                                                        {sig.name} {sig.is_default && '(Default)'}
+                                                      </SelectItem>
+                                                    ))}
+                                                  </SelectContent>
+                                                </Select>
+                                                {selectedSignatureId && (
+                                                  <div className="mt-3 p-3 bg-background rounded border border-border max-h-[200px] overflow-y-auto">
+                                                    <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+                                                    <div 
+                                                      className="prose prose-sm max-w-none text-foreground"
+                                                      dangerouslySetInnerHTML={{ 
+                                                        __html: getSignatureContent(selectedSignatureId) 
+                                                      }}
+                                                    />
+                                                  </div>
+                                                )}
+                                                <p className="text-xs text-muted-foreground mt-2">
+                                                  Don't have a signature?{' '}
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => window.open('/signatures', '_blank')}
+                                                    className="text-primary hover:underline"
+                                                  >
+                                                    Create one here
+                                                  </button>
+                                                </p>
+                                              </div>
+                                            )}
+                                          </>
+                                        )}
                                       </div>
                                       <div className="flex gap-3">
                                         <Button variant="gold" onClick={saveDraftEdit}>
@@ -565,6 +699,14 @@ export default function Drafts() {
                                     Approve
                                   </Button>
                                 )}
+                                <Button 
+                                  variant="destructive" 
+                                  size="sm"
+                                  onClick={() => deleteDraft(draft.id)}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  Delete
+                                </Button>
                               </div>
                             </div>
                             <div className="bg-background rounded-lg p-4 border border-border">

@@ -1,7 +1,9 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Settings as SettingsIcon, Shield, Clock, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Settings as SettingsIcon, Shield, Clock, Zap, Pen } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Settings() {
   return (
@@ -89,6 +91,30 @@ export default function Settings() {
                   <p className="text-sm text-muted-foreground">Random variance applied</p>
                 </div>
                 <Badge className="bg-primary/20 text-primary border-primary/30">30-60 sec</Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Email Signatures */}
+          <Card className="bg-card border-border">
+            <CardHeader className="border-b border-border">
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <Pen className="w-5 h-5 text-primary" />
+                Email Signatures
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+                <div>
+                  <p className="font-medium text-foreground">Manage Signatures</p>
+                  <p className="text-sm text-muted-foreground">Add logos and signatures to emails</p>
+                </div>
+                <Link to="/signatures">
+                  <Button variant="outline" size="sm">
+                    <Pen className="w-4 h-4 mr-2" />
+                    Manage
+                  </Button>
+                </Link>
               </div>
             </CardContent>
           </Card>

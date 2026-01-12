@@ -94,13 +94,52 @@ serve(async (req) => {
           continue;
         }
 
+        // Get signature if enabled
+        let emailContent = draft.edited_body || draft.body;
+        let signatureId = null;
+        
+        if (draft.include_signature !== false && draft.signature_id) {
+          const sigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?id=eq.${draft.signature_id}`, {
+            headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey! },
+          });
+          const signatures = await sigRes.json();
+          if (signatures && signatures.length > 0) {
+            const signature = signatures[0];
+            // Build signature: content first, then image at bottom
+            let sigContent = signature.content;
+            // Add image at bottom if it exists
+            if (signature.image_url) {
+              sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
+            }
+            emailContent = `${emailContent}\n\n---\n${sigContent}`;
+            signatureId = signature.id;
+          }
+        } else if (draft.include_signature !== false) {
+          // Try to get default signature
+          const defaultSigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?is_default=eq.true&limit=1`, {
+            headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey! },
+          });
+          const defaultSigs = await defaultSigRes.json();
+          if (defaultSigs && defaultSigs.length > 0) {
+            const signature = defaultSigs[0];
+            // Build signature: content first, then image at bottom
+            let sigContent = signature.content;
+            // Add image at bottom if it exists
+            if (signature.image_url) {
+              sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
+            }
+            emailContent = `${emailContent}\n\n---\n${sigContent}`;
+            signatureId = signature.id;
+          }
+        }
+
         // Send email via Microsoft Graph
         const emailBody = {
           message: {
             subject: draft.edited_subject || draft.subject,
             body: {
-              contentType: 'Text',
-              content: draft.edited_body || draft.body,
+              contentType: 'HTML',
+              content: emailContent.replace(/\n/g, '<br>'),
             },
             toRecipients: [{ emailAddress: { address: draft.contact.email } }],
           },
@@ -136,8 +175,9 @@ serve(async (req) => {
             sender_account_id: senderAccountId,
             draft_type: draft.draft_type,
             subject: draft.edited_subject || draft.subject,
-            body: draft.edited_body || draft.body,
+            body: emailContent,
             recipient_email: draft.contact.email,
+            signature_id: signatureId,
           }),
         });
 
@@ -161,7 +201,7 @@ serve(async (req) => {
         const otherDrafts = await otherDraftsRes.json();
 
         for (const followDraft of otherDrafts) {
-          const daysDelay = followDraft.draft_type === 'second_followup' ? 4 : 7;
+          const daysDelay = followDraft.draft_type === 'second_followup' ? 2 : 7;
           const scheduledFor = new Date(now.getTime() + daysDelay * 24 * 60 * 60 * 1000);
 
           await fetch(`${supabaseUrl}/rest/v1/scheduled_emails`, {
