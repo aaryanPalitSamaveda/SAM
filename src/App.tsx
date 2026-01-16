@@ -15,6 +15,7 @@ import Campaigns from "./pages/Campaigns";
 import CampaignDetail from "./pages/CampaignDetail";
 import OutlookView from "./pages/OutlookView";
 import EmailSignatures from "./pages/EmailSignatures";
+import EmailAnalyticsDetails from "./pages/EmailAnalyticsDetails";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/sent" element={<SentEmails />} />
           <Route path="/outlook" element={<OutlookView />} />
           <Route path="/signatures" element={<EmailSignatures />} />
+          <Route path="/analytics" element={<EmailAnalyticsDetails />} />
           <Route path="/accounts" element={<SenderAccounts />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<NotFound />} />

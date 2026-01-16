@@ -4,13 +4,17 @@ import { StatsCard } from '@/components/dashboard/StatsCard';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { AnalyticsChart } from '@/components/dashboard/AnalyticsChart';
 import { supabase } from '@/integrations/supabase/client';
-import { Mail, FileText, Send, Users, Clock, TrendingUp } from 'lucide-react';
+import { Mail, FileText, Send, Users, Clock, TrendingUp, BarChart3 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
 
 interface DashboardStats {
   totalContacts: number;
   totalDrafts: number;
   pendingApproval: number;
   totalSent: number;
+  totalOpened: number;
+  totalReplies: number;
   scheduledEmails: number;
 }
 
@@ -20,6 +24,8 @@ export default function Dashboard() {
     totalDrafts: 0,
     pendingApproval: 0,
     totalSent: 0,
+    totalOpened: 0,
+    totalReplies: 0,
     scheduledEmails: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -30,11 +36,13 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const [contactsRes, draftsRes, pendingRes, sentRes, scheduledRes] = await Promise.all([
+      const [contactsRes, draftsRes, pendingRes, sentRes, openedRes, repliesRes, scheduledRes] = await Promise.all([
         supabase.from('contacts').select('id', { count: 'exact', head: true }),
         supabase.from('email_drafts').select('id', { count: 'exact', head: true }),
         supabase.from('email_drafts').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
         supabase.from('sent_emails').select('id', { count: 'exact', head: true }),
+        supabase.from('email_opens').select('id', { count: 'exact', head: true }),
+        supabase.from('email_replies').select('id', { count: 'exact', head: true }),
         supabase.from('scheduled_emails').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       ]);
 
@@ -43,6 +51,8 @@ export default function Dashboard() {
         totalDrafts: draftsRes.count || 0,
         pendingApproval: pendingRes.count || 0,
         totalSent: sentRes.count || 0,
+        totalOpened: openedRes.count || 0,
+        totalReplies: repliesRes.count || 0,
         scheduledEmails: scheduledRes.count || 0,
       });
     } catch (error) {
@@ -56,7 +66,7 @@ export default function Dashboard() {
     <MainLayout>
       <div className="space-y-8">
         {/* Header */}
-        <div className="animate-fade-in">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-primary/10">
               <TrendingUp className="w-5 h-5 text-primary" />
@@ -65,16 +75,24 @@ export default function Dashboard() {
               Overview
             </span>
           </div>
-          <h1 className="text-3xl font-serif font-semibold text-foreground tracking-tight">
-            Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Monitor your investor outreach campaigns and track engagement
-          </p>
+          <div>
+            <h1 className="text-3xl font-serif font-semibold text-foreground tracking-tight">
+              Dashboard
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Monitor your investor outreach campaigns and track engagement
+            </p>
+          </div>
+          <Link to="/analytics">
+            <Button variant="outline" className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              View Analytics
+            </Button>
+          </Link>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 animate-slide-up">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 animate-slide-up">
           <StatsCard
             title="Total Contacts"
             value={loading ? '—' : stats.totalContacts}
@@ -94,6 +112,16 @@ export default function Dashboard() {
             title="Emails Sent"
             value={loading ? '—' : stats.totalSent}
             icon={<Send className="w-5 h-5 text-primary" />}
+          />
+          <StatsCard
+            title="Emails Opened"
+            value={loading ? '—' : stats.totalOpened}
+            icon={<Mail className="w-5 h-5 text-primary" />}
+          />
+          <StatsCard
+            title="Replies"
+            value={loading ? '—' : stats.totalReplies}
+            icon={<TrendingUp className="w-5 h-5 text-primary" />}
           />
           <StatsCard
             title="Scheduled"

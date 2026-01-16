@@ -185,6 +185,23 @@ export default function Drafts() {
     return sigContent;
   };
 
+  const getDefaultSignatureId = () => {
+    return signatures.find((s: any) => s.is_default)?.id || '';
+  };
+
+  const getEmailPreviewHtml = () => {
+    const bodyHtml = (editedBody || '').replace(/\n/g, '<br>');
+    if (!includeSignature) return bodyHtml;
+
+    const signatureId = selectedSignatureId || getDefaultSignatureId();
+    if (!signatureId) return bodyHtml;
+
+    const signatureHtml = getSignatureContent(signatureId);
+    if (!signatureHtml) return bodyHtml;
+
+    return `${bodyHtml}<br><br>---<br>${signatureHtml}`;
+  };
+
   const deleteDraft = async (draftId: string) => {
     if (!confirm('Are you sure you want to delete this draft? This action cannot be undone.')) {
       return;
@@ -199,7 +216,10 @@ export default function Drafts() {
       toast.error('Failed to delete draft');
     } else {
       toast.success('Draft deleted!');
-      fetchData();
+      setDrafts((prev) => prev.filter((draft) => draft.id !== draftId));
+      if (editingDraft?.id === draftId) {
+        setEditingDraft(null);
+      }
     }
   };
 
@@ -523,25 +543,25 @@ export default function Drafts() {
                         {approvedCount}/3 approved
                       </span>
                       <div className="flex items-center gap-2">
-                        {allApproved && (
-                          <Button 
-                            variant="gold" 
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              sendApprovedDrafts(contactId);
-                            }}
+                      {allApproved && (
+                        <Button 
+                          variant="gold" 
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sendApprovedDrafts(contactId);
+                          }}
                             className="text-xs sm:text-sm"
-                          >
-                            <Send className="w-4 h-4 mr-1" />
-                            Send
-                          </Button>
-                        )}
-                        {isExpanded ? (
-                          <ChevronUp className="w-5 h-5 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                        )}
+                        >
+                          <Send className="w-4 h-4 mr-1" />
+                          Send
+                        </Button>
+                      )}
+                      {isExpanded ? (
+                        <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      )}
                       </div>
                     </div>
                   </div>
@@ -573,8 +593,10 @@ export default function Drafts() {
                                         setEditingDraft(draft);
                                         setEditedSubject(draft.edited_subject || draft.subject);
                                         setEditedBody(draft.edited_body || draft.body);
+                                        const hasSignature = (draft as any).signature_id;
+                                        const defaultSignatureId = signatures.find((s: any) => s.is_default)?.id || '';
                                         setIncludeSignature((draft as any).include_signature !== false);
-                                        setSelectedSignatureId((draft as any).signature_id || '');
+                                        setSelectedSignatureId(hasSignature || defaultSignatureId);
                                       }}
                                     >
                                       <Edit className="w-4 h-4 mr-1" />
@@ -655,6 +677,11 @@ export default function Drafts() {
                                                     ))}
                                                   </SelectContent>
                                                 </Select>
+                                                {!selectedSignatureId && getDefaultSignatureId() && (
+                                                  <p className="text-xs text-muted-foreground mt-2">
+                                                    Default signature will be used automatically.
+                                                  </p>
+                                                )}
                                                 {selectedSignatureId && (
                                                   <div className="mt-3 p-3 bg-background rounded border border-border max-h-[200px] overflow-y-auto">
                                                     <p className="text-xs text-muted-foreground mb-2">Preview:</p>
@@ -680,6 +707,13 @@ export default function Drafts() {
                                             )}
                                           </>
                                         )}
+                                      </div>
+                                      <div className="p-4 bg-background rounded-lg border border-border">
+                                        <p className="text-sm font-medium text-foreground mb-2">Email Preview</p>
+                                        <div
+                                          className="prose prose-sm max-w-none text-foreground max-h-[240px] overflow-y-auto pr-2"
+                                          dangerouslySetInnerHTML={{ __html: getEmailPreviewHtml() }}
+                                        />
                                       </div>
                                       <div className="flex gap-3">
                                         <Button variant="gold" onClick={saveDraftEdit}>
@@ -713,9 +747,9 @@ export default function Drafts() {
                               <p className="font-medium text-foreground mb-2">
                                 {draft.edited_subject || draft.subject}
                               </p>
-                              <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4">
+                              <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto pr-2">
                                 {draft.edited_body || draft.body}
-                              </p>
+                              </div>
                             </div>
                           </div>
                         ))}

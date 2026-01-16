@@ -1,11 +1,53 @@
+import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Settings as SettingsIcon, Shield, Clock, Zap, Pen } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Clock, Zap, Pen, MessageSquare, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export default function Settings() {
+  const [replyTrackingActive, setReplyTrackingActive] = useState(false);
+  const [replyTrackingLoading, setReplyTrackingLoading] = useState(false);
+
+  useEffect(() => {
+    fetchReplyTrackingStatus();
+  }, []);
+
+  const fetchReplyTrackingStatus = async () => {
+    setReplyTrackingLoading(true);
+    const { count } = await supabase
+      .from('graph_subscriptions')
+      .select('id', { count: 'exact', head: true });
+    setReplyTrackingActive((count || 0) > 0);
+    setReplyTrackingLoading(false);
+  };
+
+  const setupReplyTracking = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('setup-reply-subscriptions', {
+        body: {},
+      });
+
+      if (error) {
+        toast.error(`Failed to setup reply tracking: ${error.message || 'Unknown error'}`);
+        return;
+      }
+
+      if (data?.error) {
+        toast.error(`Failed to setup reply tracking: ${data.error}`);
+        return;
+      }
+
+      toast.success('Reply tracking subscriptions created!');
+      fetchReplyTrackingStatus();
+    } catch (err) {
+      toast.error(`Failed to setup reply tracking: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="space-y-8 animate-fade-in">
@@ -116,6 +158,46 @@ export default function Settings() {
                   </Button>
                 </Link>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Reply Tracking */}
+          <Card className="bg-card border-border">
+            <CardHeader className="border-b border-border">
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <MessageSquare className="w-5 h-5 text-primary" />
+                Reply Tracking
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+                <div>
+                  <p className="font-medium text-foreground">Microsoft Graph Subscriptions</p>
+                  <p className="text-sm text-muted-foreground">Track replies automatically from Outlook inbox</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className={replyTrackingActive ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-destructive/20 text-destructive border-destructive/30'}>
+                    {replyTrackingActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchReplyTrackingStatus}
+                    disabled={replyTrackingLoading}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${replyTrackingLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                  <button
+                    onClick={setupReplyTracking}
+                    className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary/10 text-primary border border-primary/30 px-3 py-2 hover:bg-primary/20"
+                  >
+                    Setup Tracking
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Status is based on active Graph subscriptions saved in the database.
+              </p>
             </CardContent>
           </Card>
 

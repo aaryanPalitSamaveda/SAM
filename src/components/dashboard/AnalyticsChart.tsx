@@ -32,6 +32,8 @@ export function AnalyticsChart() {
     drafts: item.total_drafts_created,
     approved: item.total_drafts_approved,
     sent: item.total_emails_sent,
+    opened: item.total_emails_opened || 0,
+    replies: item.total_replies_received || 0,
   }));
 
   if (loading) {
@@ -65,6 +67,14 @@ export function AnalyticsChart() {
                 <linearGradient id="colorApproved" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(45 80% 45%)" stopOpacity={0.3}/>
                   <stop offset="95%" stopColor="hsl(45 80% 45%)" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorOpened" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(200 90% 55%)" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="hsl(200 90% 55%)" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorReplies" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(140 60% 45%)" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="hsl(140 60% 45%)" stopOpacity={0}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 20%)" />
@@ -104,6 +114,24 @@ export function AnalyticsChart() {
                 fill="url(#colorApproved)" 
                 strokeWidth={2}
                 name="Drafts Approved"
+              />
+              <Area 
+                type="monotone" 
+                dataKey="opened" 
+                stroke="hsl(200 90% 55%)" 
+                fillOpacity={1} 
+                fill="url(#colorOpened)" 
+                strokeWidth={2}
+                name="Emails Opened"
+              />
+              <Area 
+                type="monotone" 
+                dataKey="replies" 
+                stroke="hsl(140 60% 45%)" 
+                fillOpacity={1} 
+                fill="url(#colorReplies)" 
+                strokeWidth={2}
+                name="Replies"
               />
             </AreaChart>
           </ResponsiveContainer>

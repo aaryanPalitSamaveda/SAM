@@ -13,7 +13,8 @@ import {
   Rocket,
   Building2,
   Inbox,
-  Menu
+  Menu,
+  BarChart3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ const navItems = [
   { icon: FileText, label: 'Templates', path: '/templates' },
   { icon: Mail, label: 'Drafts', path: '/drafts' },
   { icon: Send, label: 'Sent Emails', path: '/sent' },
+  { icon: BarChart3, label: 'Analytics', path: '/analytics' },
   { icon: Inbox, label: 'Outlook View', path: '/outlook' },
   { icon: Building2, label: 'Sender Accounts', path: '/accounts' },
   { icon: Settings, label: 'Settings', path: '/settings' },

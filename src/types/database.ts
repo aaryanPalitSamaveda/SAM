@@ -74,6 +74,26 @@ export interface SentEmail {
   sender_account?: SenderAccount;
 }
 
+export interface EmailOpen {
+  id: string;
+  sent_email_id: string;
+  contact_id: string;
+  opened_at: string;
+  user_agent: string | null;
+  ip_address: string | null;
+}
+
+export interface EmailReply {
+  id: string;
+  sent_email_id: string | null;
+  contact_id: string;
+  received_at: string;
+  subject: string | null;
+  snippet: string | null;
+  created_at: string;
+  contact?: Contact;
+}
+
 export interface ScheduledEmail {
   id: string;
   draft_id: string;
@@ -93,6 +113,8 @@ export interface EmailAnalytics {
   total_drafts_approved: number;
   total_emails_sent: number;
   total_followups_sent: number;
+  total_emails_opened?: number;
+  total_replies_received?: number;
   created_at: string;
 }
 

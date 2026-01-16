@@ -94,9 +94,40 @@ serve(async (req) => {
           continue;
         }
 
+        const sentEmailId = crypto.randomUUID();
+        const trackingPixelUrl = `${supabaseUrl}/functions/v1/track-open?sent_email_id=${encodeURIComponent(sentEmailId)}`;
+
         // Get signature if enabled
         let emailContent = draft.edited_body || draft.body;
         let signatureId = null;
+        let inlineAttachment: any = null;
+
+        const buildSignatureContent = (signature: any) => {
+          let sigContent = signature.content;
+          let attachment: Record<string, unknown> | null = null;
+
+          if (signature.image_url) {
+            const dataUrlMatch = signature.image_url.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.*)$/);
+            if (dataUrlMatch) {
+              const contentType = dataUrlMatch[1];
+              const contentBytes = dataUrlMatch[2];
+              const contentId = `signature-logo-${signature.id}`;
+              attachment = {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name: "signature-logo",
+                contentType,
+                contentBytes,
+                isInline: true,
+                contentId,
+              };
+              sigContent = `${sigContent}<br><br><img src="cid:${contentId}" alt="Logo" style="max-height: 60px;" />`;
+            } else {
+              sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
+            }
+          }
+
+          return { sigContent, attachment };
+        };
         
         if (draft.include_signature !== false && draft.signature_id) {
           const sigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?id=eq.${draft.signature_id}`, {
@@ -105,14 +136,10 @@ serve(async (req) => {
           const signatures = await sigRes.json();
           if (signatures && signatures.length > 0) {
             const signature = signatures[0];
-            // Build signature: content first, then image at bottom
-            let sigContent = signature.content;
-            // Add image at bottom if it exists
-            if (signature.image_url) {
-              sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
-            }
+            const { sigContent, attachment } = buildSignatureContent(signature);
             emailContent = `${emailContent}\n\n---\n${sigContent}`;
             signatureId = signature.id;
+            inlineAttachment = attachment;
           }
         } else if (draft.include_signature !== false) {
           // Try to get default signature
@@ -122,14 +149,10 @@ serve(async (req) => {
           const defaultSigs = await defaultSigRes.json();
           if (defaultSigs && defaultSigs.length > 0) {
             const signature = defaultSigs[0];
-            // Build signature: content first, then image at bottom
-            let sigContent = signature.content;
-            // Add image at bottom if it exists
-            if (signature.image_url) {
-              sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
-            }
+            const { sigContent, attachment } = buildSignatureContent(signature);
             emailContent = `${emailContent}\n\n---\n${sigContent}`;
             signatureId = signature.id;
+            inlineAttachment = attachment;
           }
         }
 
@@ -139,9 +162,10 @@ serve(async (req) => {
             subject: draft.edited_subject || draft.subject,
             body: {
               contentType: 'HTML',
-              content: emailContent.replace(/\n/g, '<br>'),
+              content: `${emailContent.replace(/\n/g, '<br>')}<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;" alt="" />`,
             },
             toRecipients: [{ emailAddress: { address: draft.contact.email } }],
+            ...(inlineAttachment ? { attachments: [inlineAttachment] } : {}),
           },
           saveToSentItems: true,
         };
@@ -170,6 +194,7 @@ serve(async (req) => {
             'apikey': supabaseKey!,
           },
           body: JSON.stringify({
+            id: sentEmailId,
             draft_id: draft.id,
             contact_id: draft.contact_id,
             sender_account_id: senderAccountId,
