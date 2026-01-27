@@ -172,6 +172,11 @@ serve(async (req) => {
         const sentEmails = await sentRes.json();
         const sentEmail = sentEmails?.[0] || null;
 
+        if (!sentEmail) {
+          skipped++;
+          continue;
+        }
+
         await fetch(`${supabaseUrl}/rest/v1/email_replies`, {
           method: 'POST',
           headers: {

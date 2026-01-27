@@ -77,78 +77,15 @@ serve(async (req) => {
     const tokenData = await tokenRes.json();
     const accessToken = tokenData.access_token;
 
-    const sentEmailId = crypto.randomUUID();
-    const trackingPixelUrl = `${supabaseUrl}/functions/v1/track-open?sent_email_id=${encodeURIComponent(sentEmailId)}`;
-
-    // Get signature if enabled
-    let emailContent = draft.edited_body || draft.body;
-    let signatureId = null;
-    let inlineAttachment: any = null;
-
-    const buildSignatureContent = (signature: any) => {
-      let sigContent = signature.content;
-      let attachment: Record<string, unknown> | null = null;
-
-      if (signature.image_url) {
-        const dataUrlMatch = signature.image_url.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.*)$/);
-        if (dataUrlMatch) {
-          const contentType = dataUrlMatch[1];
-          const contentBytes = dataUrlMatch[2];
-          const contentId = `signature-logo-${signature.id}`;
-          attachment = {
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            name: "signature-logo",
-            contentType,
-            contentBytes,
-            isInline: true,
-            contentId,
-          };
-          sigContent = `${sigContent}<br><br><img src="cid:${contentId}" alt="Logo" style="max-height: 60px;" />`;
-        } else {
-          sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
-        }
-      }
-
-      return { sigContent, attachment };
-    };
-    
-    if (draft.include_signature !== false && draft.signature_id) {
-      const sigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?id=eq.${draft.signature_id}`, {
-        headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey! },
-      });
-      const signatures = await sigRes.json();
-      if (signatures && signatures.length > 0) {
-        const signature = signatures[0];
-        const { sigContent, attachment } = buildSignatureContent(signature);
-        emailContent = `${emailContent}\n\n---\n${sigContent}`;
-        signatureId = signature.id;
-        inlineAttachment = attachment;
-      }
-    } else if (draft.include_signature !== false) {
-      // Try to get default signature
-      const defaultSigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?is_default=eq.true&limit=1`, {
-        headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey! },
-      });
-      const defaultSigs = await defaultSigRes.json();
-      if (defaultSigs && defaultSigs.length > 0) {
-        const signature = defaultSigs[0];
-        const { sigContent, attachment } = buildSignatureContent(signature);
-        emailContent = `${emailContent}\n\n---\n${sigContent}`;
-        signatureId = signature.id;
-        inlineAttachment = attachment;
-      }
-    }
-
     // Send email via Microsoft Graph
     const emailBody = {
       message: {
         subject: draft.edited_subject || draft.subject,
         body: {
-          contentType: 'HTML',
-          content: `${emailContent.replace(/\n/g, '<br>')}<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;" alt="" />`,
+          contentType: 'Text',
+          content: draft.edited_body || draft.body,
         },
         toRecipients: [{ emailAddress: { address: draft.contact.email } }],
-        ...(inlineAttachment ? { attachments: [inlineAttachment] } : {}),
       },
       saveToSentItems: true,
     };
@@ -184,15 +121,13 @@ serve(async (req) => {
         'apikey': supabaseKey!,
       },
       body: JSON.stringify({
-        id: sentEmailId,
         draft_id: draft.id,
         contact_id: draft.contact_id,
         sender_account_id: senderAccountId,
         draft_type: draft.draft_type,
         subject: draft.edited_subject || draft.subject,
-        body: emailContent,
+        body: draft.edited_body || draft.body,
         recipient_email: draft.contact.email,
-        signature_id: signatureId,
       }),
     });
 
@@ -236,8 +171,8 @@ serve(async (req) => {
       const otherDrafts = await otherDraftsRes.json();
 
       for (const followDraft of otherDrafts) {
-        // Updated timing: 2nd follow-up after 2 days, final follow-up after 7 days (from first outreach)
-        const daysDelay = followDraft.draft_type === 'second_followup' ? 2 : 7;
+        // Updated timing: 1st follow-up after 4 days, final follow-up after 7 days (from first outreach)
+        const daysDelay = followDraft.draft_type === 'second_followup' ? 4 : 7;
         const scheduledFor = new Date(now.getTime() + daysDelay * 24 * 60 * 60 * 1000);
 
         await fetch(`${supabaseUrl}/rest/v1/scheduled_emails`, {

@@ -8,15 +8,19 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Send, Search, Filter, Clock, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function SentEmails() {
   const [emails, setEmails] = useState<SentEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [selectedEmail, setSelectedEmail] = useState<SentEmail | null>(null);
+  const [signatures, setSignatures] = useState<any[]>([]);
 
   useEffect(() => {
     fetchEmails();
+    fetchSignatures();
   }, []);
 
   const fetchEmails = async () => {
@@ -33,6 +37,55 @@ export default function SentEmails() {
       setEmails(data as unknown as SentEmail[]);
     }
     setLoading(false);
+  };
+
+  const fetchSignatures = async () => {
+    const { data } = await supabase
+      .from('email_signatures')
+      .select('*');
+    if (data) {
+      setSignatures(data as any[]);
+    }
+  };
+
+  const getSignatureHtml = (signatureId?: string | null) => {
+    if (!signatureId) return '';
+    const signature = signatures.find((s) => s.id === signatureId);
+    if (!signature) return '';
+    let sigContent = signature.content;
+    if (signature.image_url) {
+      sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
+    }
+    return sigContent;
+  };
+
+  const getDisplayBodyHtml = (email: SentEmail) => {
+    const signature = signatures.find((s) => s.id === email.signature_id);
+    const baseBody = (email.body || '').replace(/\n/g, '<br>');
+
+    if (!signature) {
+      return baseBody;
+    }
+
+    const hasSignature =
+      (signature.content && baseBody.includes(signature.content)) ||
+      (signature.image_url && baseBody.includes(signature.image_url)) ||
+      baseBody.includes('signature-logo');
+
+    let updatedBody = baseBody;
+    if (signature.image_url) {
+      updatedBody = updatedBody
+        .replace(/cid:signature-logo-[^'"]+/g, signature.image_url)
+        .replace(/cid:signature-logo/g, signature.image_url);
+    }
+
+    if (hasSignature) {
+      return updatedBody;
+    }
+
+    const signatureHtml = getSignatureHtml(email.signature_id);
+    if (!signatureHtml) return updatedBody;
+    return `${updatedBody}<br><br>---<br>${signatureHtml}`;
   };
 
   const getDraftTypeLabel = (type: string) => {
@@ -183,7 +236,11 @@ export default function SentEmails() {
               const sender = email.sender_account as any;
 
               return (
-                <Card key={email.id} className="bg-card border-border hover:border-primary/30 transition-colors">
+                <Card
+                  key={email.id}
+                  className="bg-card border-border hover:border-primary/30 transition-colors cursor-pointer"
+                  onClick={() => setSelectedEmail(email)}
+                >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4">
@@ -219,6 +276,26 @@ export default function SentEmails() {
             })}
           </div>
         )}
+        <Dialog open={!!selectedEmail} onOpenChange={() => setSelectedEmail(null)}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">{selectedEmail?.subject}</DialogTitle>
+            </DialogHeader>
+            {selectedEmail && (
+              <div className="space-y-4 mt-4">
+                <div className="text-sm text-muted-foreground">
+                  To: {selectedEmail.recipient_email}
+                </div>
+                <div
+                  className="prose prose-sm max-w-none text-foreground"
+                  dangerouslySetInnerHTML={{
+                    __html: getDisplayBodyHtml(selectedEmail),
+                  }}
+                />
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

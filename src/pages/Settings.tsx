@@ -205,8 +205,8 @@ export default function Settings() {
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-foreground">Manual Reply Sync (Fallback)</p>
-                    <Badge className={replySyncStatus ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-destructive/20 text-destructive border-destructive/30'}>
-                      {replySyncStatus ? 'Active' : 'Inactive'}
+                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                      Active
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">Fetch replies directly from inbox if webhook misses</p>

@@ -192,6 +192,11 @@ serve(async (req) => {
       const sentEmails = await sentRes.json();
       const sentEmail = sentEmails?.[0] || null;
 
+      if (!sentEmail) {
+        console.log('Skipping reply: no matching sent email', { fromEmail });
+        continue;
+      }
+
       // Insert reply record
       const replyRes = await fetch(`${supabaseUrl}/rest/v1/email_replies`, {
         method: 'POST',

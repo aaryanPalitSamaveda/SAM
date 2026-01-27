@@ -68,6 +68,7 @@ export interface SentEmail {
   sent_at: string;
   message_id: string | null;
   status: string;
+  signature_id?: string | null;
   campaign_id?: string | null;
   sequence_step?: number | null;
   contact?: Contact;

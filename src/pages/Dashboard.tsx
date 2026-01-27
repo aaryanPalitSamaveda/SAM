@@ -41,8 +41,8 @@ export default function Dashboard() {
         supabase.from('email_drafts').select('id', { count: 'exact', head: true }),
         supabase.from('email_drafts').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
         supabase.from('sent_emails').select('id', { count: 'exact', head: true }),
-        supabase.from('email_opens').select('id', { count: 'exact', head: true }),
-        supabase.from('email_replies').select('id', { count: 'exact', head: true }),
+        supabase.from('email_opens' as any).select('id', { count: 'exact', head: true }),
+        supabase.from('email_replies' as any).select('id', { count: 'exact', head: true }).not('sent_email_id', 'is', null),
         supabase.from('scheduled_emails').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       ]);
 

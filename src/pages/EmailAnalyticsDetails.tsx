@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Clock, Search, Mail, Eye, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -38,14 +39,15 @@ export default function EmailAnalyticsDetails() {
       const sentEmailIds = (sentData || []).map((email) => email.id);
 
       const { data: openData } = await supabase
-        .from('email_opens')
+        .from('email_opens' as any)
         .select('*, sent_email:sent_emails(subject, recipient_email), contact:contacts(name, email)')
         .in('sent_email_id', sentEmailIds)
         .order('opened_at', { ascending: false });
 
       const { data: replyData } = await supabase
-        .from('email_replies')
+        .from('email_replies' as any)
         .select('*, contact:contacts(name, email, company), sent_email:sent_emails(subject, recipient_email)')
+        .not('sent_email_id', 'is', null)
         .order('received_at', { ascending: false })
         .limit(200);
 
@@ -82,6 +84,13 @@ export default function EmailAnalyticsDetails() {
       );
     });
   }, [sentEmails, searchQuery]);
+
+  const sentEmailMap = useMemo(() => {
+    return sentEmails.reduce<Record<string, SentEmailWithMeta>>((acc, email) => {
+      acc[email.id] = email;
+      return acc;
+    }, {});
+  }, [sentEmails]);
 
   return (
     <MainLayout>
@@ -136,7 +145,6 @@ export default function EmailAnalyticsDetails() {
                         <div
                           key={email.id}
                           className="p-4 hover:bg-secondary/30 transition-colors cursor-pointer"
-                          onClick={() => setSelectedEmail(email)}
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
@@ -154,6 +162,13 @@ export default function EmailAnalyticsDetails() {
                                 <Badge variant="secondary">Opens: {email.openCount || 0}</Badge>
                               </div>
                             </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedEmail(email)}
+                            >
+                              Open
+                            </Button>
                           </div>
                         </div>
                       );
@@ -169,19 +184,34 @@ export default function EmailAnalyticsDetails() {
                   ) : opens.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground">No opens tracked yet</div>
                   ) : (
-                    opens.map((open: any) => (
+                    opens.map((open: any) => {
+                      const sentEmail = sentEmailMap[open.sent_email_id];
+                      return (
                       <div key={open.id} className="p-4">
-                        <p className="font-medium text-foreground">
-                          {open.contact?.name || open.contact?.email || 'Unknown contact'}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {open.sent_email?.subject || 'No subject'}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {format(new Date(open.opened_at), 'MMM d, yyyy h:mm a')}
-                        </p>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground">
+                              {open.contact?.name || open.contact?.email || 'Unknown contact'}
+                            </p>
+                            <p className="text-sm text-muted-foreground truncate">
+                              {open.sent_email?.subject || 'No subject'}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {format(new Date(open.opened_at), 'MMM d, yyyy h:mm a')}
+                            </p>
+                          </div>
+                          {sentEmail && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedEmail(sentEmail)}
+                            >
+                              Open
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    ))
+                    )})
                   )}
                 </div>
               </TabsContent>
@@ -195,18 +225,32 @@ export default function EmailAnalyticsDetails() {
                   ) : (
                     replies.map((reply: any) => {
                       const contact = reply.contact as any;
+                      const sentEmail = reply.sent_email_id ? sentEmailMap[reply.sent_email_id] : null;
                       return (
                         <div key={reply.id} className="p-4">
-                          <p className="font-medium text-foreground">
-                            {contact?.name || reply.contact_id}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {reply.sent_email?.subject || reply.subject || 'No subject'}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">{reply.snippet || ''}</p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {format(new Date(reply.received_at), 'MMM d, yyyy h:mm a')}
-                          </p>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-foreground">
+                                {contact?.name || reply.contact_id}
+                              </p>
+                              <p className="text-sm text-muted-foreground truncate">
+                                {reply.sent_email?.subject || reply.subject || 'No subject'}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">{reply.snippet || ''}</p>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {format(new Date(reply.received_at), 'MMM d, yyyy h:mm a')}
+                              </p>
+                            </div>
+                            {sentEmail && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedEmail(sentEmail)}
+                              >
+                                Open
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       );
                     })
