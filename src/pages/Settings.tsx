@@ -11,6 +11,12 @@ import { toast } from 'sonner';
 export default function Settings() {
   const [replyTrackingActive, setReplyTrackingActive] = useState(false);
   const [replyTrackingLoading, setReplyTrackingLoading] = useState(false);
+  const [replySyncLoading, setReplySyncLoading] = useState(false);
+  const [replySyncStatus, setReplySyncStatus] = useState<{
+    lastRunAt: string;
+    inserted: number;
+    skipped: number;
+  } | null>(null);
 
   useEffect(() => {
     fetchReplyTrackingStatus();
@@ -50,10 +56,10 @@ export default function Settings() {
 
   return (
     <MainLayout>
-      <div className="space-y-8 animate-fade-in">
-        <div>
-          <h1 className="text-4xl font-bold font-serif text-gradient-gold">Settings</h1>
-          <p className="text-muted-foreground mt-2">
+      <div className="space-y-6 animate-fade-in">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-semibold text-foreground">Settings</h1>
+          <p className="text-muted-foreground text-sm">
             Configure your SamaReach application settings
           </p>
         </div>
@@ -67,15 +73,15 @@ export default function Settings() {
                 API Configuration
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+            <CardContent className="p-4 divide-y divide-border">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">Claude API</p>
                   <p className="text-sm text-muted-foreground">For AI-powered email generation</p>
                 </div>
                 <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Connected</Badge>
               </div>
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">Microsoft Graph API</p>
                   <p className="text-sm text-muted-foreground">For Outlook email sending</p>
@@ -93,15 +99,15 @@ export default function Settings() {
                 Follow-up Schedule
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+            <CardContent className="p-4 divide-y divide-border">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">2nd Follow-up</p>
                   <p className="text-sm text-muted-foreground">After 1st outreach</p>
                 </div>
                 <Badge className="bg-primary/20 text-primary border-primary/30">2 Days</Badge>
               </div>
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">Final Follow-up</p>
                   <p className="text-sm text-muted-foreground">After 1st outreach</p>
@@ -119,15 +125,15 @@ export default function Settings() {
                 Rate Limiting
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+            <CardContent className="p-4 divide-y divide-border">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">Emails per Hour</p>
                   <p className="text-sm text-muted-foreground">To avoid spam detection</p>
                 </div>
                 <Badge className="bg-primary/20 text-primary border-primary/30">30</Badge>
               </div>
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">Delay Between Emails</p>
                   <p className="text-sm text-muted-foreground">Random variance applied</p>
@@ -145,8 +151,8 @@ export default function Settings() {
                 Email Signatures
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-foreground">Manage Signatures</p>
                   <p className="text-sm text-muted-foreground">Add logos and signatures to emails</p>
@@ -169,8 +175,8 @@ export default function Settings() {
                 Reply Tracking
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="font-medium text-foreground">Microsoft Graph Subscriptions</p>
                   <p className="text-sm text-muted-foreground">Track replies automatically from Outlook inbox</p>
@@ -195,7 +201,50 @@ export default function Settings() {
                   </button>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <div className="flex items-center justify-between py-3 border-t border-border">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">Manual Reply Sync (Fallback)</p>
+                    <Badge className={replySyncStatus ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-destructive/20 text-destructive border-destructive/30'}>
+                      {replySyncStatus ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Fetch replies directly from inbox if webhook misses</p>
+                  {replySyncStatus && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Last sync: {new Date(replySyncStatus.lastRunAt).toLocaleString()} • Added {replySyncStatus.inserted} • Skipped {replySyncStatus.skipped}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    setReplySyncLoading(true);
+                    const { data, error } = await supabase.functions.invoke('sync-replies', { body: {} });
+                    if (error) {
+                      toast.error(`Sync failed: ${error.message || 'Unknown error'}`);
+                      setReplySyncLoading(false);
+                      return;
+                    }
+                    if (data?.error) {
+                      toast.error(`Sync failed: ${data.error}`);
+                      setReplySyncLoading(false);
+                      return;
+                    }
+                    setReplySyncStatus({
+                      lastRunAt: new Date().toISOString(),
+                      inserted: data?.inserted || 0,
+                      skipped: data?.skipped || 0,
+                    });
+                    toast.success(`Reply sync complete. Added ${data?.inserted || 0} replies.`);
+                    setReplySyncLoading(false);
+                  }}
+                  className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary/10 text-primary border border-primary/30 px-3 py-2 hover:bg-primary/20 disabled:opacity-60"
+                  disabled={replySyncLoading}
+                >
+                  {replySyncLoading ? 'Syncing...' : 'Sync Now'}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground pt-2">
                 Status is based on active Graph subscriptions saved in the database.
               </p>
             </CardContent>
@@ -209,12 +258,12 @@ export default function Settings() {
                 System Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+            <CardContent className="p-4 divide-y divide-border">
+              <div className="flex items-center justify-between py-3">
                 <p className="font-medium text-foreground">Version</p>
                 <span className="text-muted-foreground">1.0.0</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center justify-between py-3">
                 <p className="font-medium text-foreground">Environment</p>
                 <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Production</Badge>
               </div>
