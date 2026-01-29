@@ -3,6 +3,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { AnalyticsChart } from '@/components/dashboard/AnalyticsChart';
+import { CoreAnalytics } from '@/components/dashboard/CoreAnalytics';
 import { supabase } from '@/integrations/supabase/client';
 import { Mail, FileText, Send, Users, Clock, TrendingUp, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -64,23 +65,13 @@ export default function Dashboard() {
 
   return (
     <MainLayout>
-      <div className="space-y-8">
+      <div className="space-y-5">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <TrendingUp className="w-5 h-5 text-primary" />
-            </div>
-            <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
-              Overview
-            </span>
-          </div>
-          <div>
-            <h1 className="text-3xl font-serif font-semibold text-foreground tracking-tight">
-              Dashboard
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Monitor your investor outreach campaigns and track engagement
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground text-sm">
+              Monitor outreach activity and engagement
             </p>
           </div>
           <Link to="/analytics">
@@ -92,7 +83,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 animate-slide-up">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
           <StatsCard
             title="Total Contacts"
             value={loading ? '—' : stats.totalContacts}
@@ -131,9 +122,10 @@ export default function Dashboard() {
         </div>
 
         {/* Charts and Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
-          <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2 space-y-4">
             <AnalyticsChart />
+            <CoreAnalytics />
           </div>
           <div>
             <RecentActivity />

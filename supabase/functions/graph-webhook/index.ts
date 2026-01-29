@@ -112,6 +112,19 @@ serve(async (req) => {
       }
       console.log('Reply message:', { fromEmail, subject: message?.subject, inReplyTo: message?.inReplyTo });
 
+      // Find the most recent sent email to this contact (must exist)
+      const sentRes = await fetch(
+        `${supabaseUrl}/rest/v1/sent_emails?recipient_email=ilike.${encodeURIComponent(fromEmail)}&order=sent_at.desc&limit=1`,
+        { headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey } }
+      );
+      const sentEmails = await sentRes.json();
+      const sentEmail = sentEmails?.[0] || null;
+
+      if (!sentEmail) {
+        console.log('Skipping reply: no matching sent email', { fromEmail });
+        continue;
+      }
+
       // Find contact by email
       const contactRes = await fetch(
         `${supabaseUrl}/rest/v1/contacts?email=ilike.${encodeURIComponent(fromEmail)}&select=id,email,name`,
@@ -181,19 +194,6 @@ serve(async (req) => {
 
       if (!contact) {
         console.log('Skipping reply: contact not found/created', { fromEmail });
-        continue;
-      }
-
-      // Find the most recent sent email to this contact
-      const sentRes = await fetch(
-        `${supabaseUrl}/rest/v1/sent_emails?recipient_email=ilike.${encodeURIComponent(fromEmail)}&order=sent_at.desc&limit=1`,
-        { headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey } }
-      );
-      const sentEmails = await sentRes.json();
-      const sentEmail = sentEmails?.[0] || null;
-
-      if (!sentEmail) {
-        console.log('Skipping reply: no matching sent email', { fromEmail });
         continue;
       }
 

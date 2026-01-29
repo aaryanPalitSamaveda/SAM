@@ -119,6 +119,15 @@ export interface EmailAnalytics {
   created_at: string;
 }
 
+export interface DealDocument {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_type: string | null;
+  content_text: string | null;
+  created_at: string;
+}
+
 // New types for Lists and Campaigns
 
 export interface ContactList {

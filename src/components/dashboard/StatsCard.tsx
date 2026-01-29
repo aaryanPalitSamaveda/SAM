@@ -15,16 +15,13 @@ interface StatsCardProps {
 export function StatsCard({ title, value, icon, trend, className }: StatsCardProps) {
   return (
     <div className={cn(
-      "relative overflow-hidden rounded-lg bg-card border border-border p-5 transition-all duration-300 hover:shadow-elegant-hover hover:border-primary/20 group",
+      "rounded-lg bg-card border border-border p-5 transition-colors duration-200 hover:border-primary/20",
       className
     )}>
-      {/* Subtle gradient overlay on hover */}
-      <div className="absolute inset-0 bg-gradient-gold-subtle opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-      
-      <div className="relative flex items-start justify-between">
+      <div className="flex items-start justify-between">
         <div className="space-y-1.5">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</p>
-          <p className="text-2xl font-semibold font-serif text-foreground tabular-nums">{value}</p>
+          <p className="text-2xl font-semibold text-foreground tabular-nums">{value}</p>
           {trend && (
             <p className={cn(
               "text-xs font-medium",
@@ -34,7 +31,7 @@ export function StatsCard({ title, value, icon, trend, className }: StatsCardPro
             </p>
           )}
         </div>
-        <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/10 group-hover:bg-primary/15 transition-colors">
+        <div className="p-2.5 rounded-lg bg-muted border border-border">
           {icon}
         </div>
       </div>

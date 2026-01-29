@@ -175,7 +175,7 @@ export function Sidebar() {
         )}
       >
         <SidebarContent />
-      </aside>
+    </aside>
     </>
   );
 }

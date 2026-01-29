@@ -13,12 +13,12 @@ export function AnalyticsChart() {
   }, []);
 
   const fetchAnalytics = async () => {
-    const thirtyDaysAgo = subDays(new Date(), 30).toISOString().split('T')[0];
+    const rangeStart = subDays(new Date(), 365).toISOString().split('T')[0];
     
     const { data, error } = await supabase
       .from('email_analytics')
       .select('*')
-      .gte('date', thirtyDaysAgo)
+      .gte('date', rangeStart)
       .order('date', { ascending: true });
 
     if (!error && data) {
@@ -49,7 +49,7 @@ export function AnalyticsChart() {
 
   return (
     <div className="rounded-xl bg-card border border-border p-6">
-      <h3 className="text-lg font-semibold font-serif mb-4 text-foreground">Email Activity (30 Days)</h3>
+      <h3 className="text-lg font-semibold font-serif mb-4 text-foreground">Email Activity (Last 12 Months)</h3>
       
       {chartData.length === 0 ? (
         <div className="h-60 flex items-center justify-center text-muted-foreground">

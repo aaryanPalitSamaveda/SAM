@@ -3,10 +3,12 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Settings as SettingsIcon, Shield, Clock, Zap, Pen, MessageSquare, RefreshCw } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Settings as SettingsIcon, Shield, Clock, Zap, Pen, MessageSquare, RefreshCw, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { DealDocument } from '@/types/database';
 
 export default function Settings() {
   const [replyTrackingActive, setReplyTrackingActive] = useState(false);
@@ -17,9 +19,14 @@ export default function Settings() {
     inserted: number;
     skipped: number;
   } | null>(null);
+  const [dealDoc, setDealDoc] = useState<DealDocument | null>(null);
+  const [dealFile, setDealFile] = useState<File | null>(null);
+  const [dealTextPreview, setDealTextPreview] = useState('');
+  const [dealUploadLoading, setDealUploadLoading] = useState(false);
 
   useEffect(() => {
     fetchReplyTrackingStatus();
+    fetchDealDocument();
   }, []);
 
   const fetchReplyTrackingStatus = async () => {
@@ -51,6 +58,105 @@ export default function Settings() {
       fetchReplyTrackingStatus();
     } catch (err) {
       toast.error(`Failed to setup reply tracking: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const fetchDealDocument = async () => {
+    const { data } = await supabase
+      .from('deal_documents')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (data) {
+      setDealDoc(data as DealDocument);
+      setDealTextPreview((data.content_text || '').slice(0, 1200));
+    }
+  };
+
+  const extractTextFromFile = async (file: File) => {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let text = '';
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+        const page = await pdf.getPage(pageNum);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((item: any) => item.str).join(' ');
+        text += `${pageText}\n`;
+      }
+      return text.trim();
+    }
+
+    if (
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.name.toLowerCase().endsWith('.docx')
+    ) {
+      const mammoth = await import('mammoth/mammoth.browser');
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return (result.value || '').trim();
+    }
+
+    return (await file.text()).trim();
+  };
+
+  const uploadDealDocument = async () => {
+    if (!dealFile) {
+      toast.error('Please select a PDF or DOCX file first.');
+      return;
+    }
+
+    setDealUploadLoading(true);
+    try {
+      const extractedText = await extractTextFromFile(dealFile);
+      if (!extractedText) {
+        toast.error('Could not extract text from the file.');
+        return;
+      }
+
+      const filePath = `${Date.now()}_${dealFile.name.replace(/\s+/g, '_')}`;
+      const { error: uploadError } = await supabase.storage
+        .from('deal-documents')
+        .upload(filePath, dealFile, {
+          upsert: true,
+          contentType: dealFile.type || 'application/octet-stream',
+        });
+
+      if (uploadError) {
+        toast.error(`Upload failed: ${uploadError.message}`);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('deal_documents')
+        .insert({
+          file_name: dealFile.name,
+          file_path: filePath,
+          file_type: dealFile.type || null,
+          content_text: extractedText,
+        })
+        .select('*')
+        .single();
+
+      if (error) {
+        toast.error(`Failed to save deal document: ${error.message}`);
+        return;
+      }
+
+      setDealDoc(data as DealDocument);
+      setDealTextPreview(extractedText.slice(0, 1200));
+      setDealFile(null);
+      toast.success('Deal details uploaded and ready for email generation.');
+    } catch (err) {
+      console.error('Deal document upload failed:', err);
+      toast.error(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setDealUploadLoading(false);
     }
   };
 
@@ -164,6 +270,51 @@ export default function Settings() {
                   </Button>
                 </Link>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Deal Details */}
+          <Card className="bg-card border-border">
+            <CardHeader className="border-b border-border">
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <FileText className="w-5 h-5 text-primary" />
+                Deal/Mandate Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-medium text-foreground">Latest Upload</p>
+                <p className="text-sm text-muted-foreground">
+                  {dealDoc
+                    ? `${dealDoc.file_name} • ${new Date(dealDoc.created_at).toLocaleString()}`
+                    : 'No deal document uploaded yet.'}
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  type="file"
+                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => setDealFile(e.target.files?.[0] || null)}
+                />
+                <Button
+                  variant="outline"
+                  onClick={uploadDealDocument}
+                  disabled={!dealFile || dealUploadLoading}
+                >
+                  {dealUploadLoading ? 'Uploading...' : 'Upload Deal Details'}
+                </Button>
+              </div>
+              {dealTextPreview && (
+                <div className="rounded-md border border-border bg-secondary/30 p-3">
+                  <p className="text-xs text-muted-foreground mb-2">Extracted preview</p>
+                  <div className="text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {dealTextPreview}
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Supports PDF and DOCX. Extracted text is used for buyer matching in AI drafts.
+              </p>
             </CardContent>
           </Card>
 

@@ -3,8 +3,9 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FileSpreadsheet, Sparkles, ChevronRight, Loader2, CheckCircle2, Clock, FileText, Eye, Send, Users } from 'lucide-react';
+import { Upload, FileSpreadsheet, Sparkles, ChevronRight, Loader2, CheckCircle2, Clock, FileText, Eye, Send, Users, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { Badge } from '@/components/ui/badge';
@@ -47,6 +48,7 @@ export default function UploadContacts() {
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [generatingDrafts, setGeneratingDrafts] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'manage'>('upload');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Filter only non-empty headers for Select options
   const validHeaders = headers.filter(h => h && h.trim() !== '');
@@ -187,14 +189,26 @@ export default function UploadContacts() {
 
       // Step 2: Check for existing emails in the database
       const emailsToCheck = Array.from(emailMap.keys());
+
+      // Ignore reply-tracking auto-contacts when checking duplicates
+      const { data: replyBatchRows } = await supabase
+        .from('upload_batches')
+        .select('id')
+        .eq('file_name', 'reply-tracking');
+      const replyBatchIds = new Set((replyBatchRows || []).map((row) => row.id));
+
       const { data: existingContacts, error: checkError } = await supabase
         .from('contacts')
-        .select('email')
+        .select('email, upload_batch_id')
         .in('email', emailsToCheck);
 
       if (checkError) throw checkError;
 
-      const existingEmails = new Set((existingContacts || []).map(c => c.email.toLowerCase().trim()));
+      const existingEmails = new Set(
+        (existingContacts || [])
+          .filter((c) => !replyBatchIds.has(c.upload_batch_id))
+          .map((c) => c.email.toLowerCase().trim())
+      );
       
       // Filter out contacts that already exist
       const newRows = uniqueRows.filter((row) => {
@@ -353,10 +367,40 @@ export default function UploadContacts() {
     return { status: 'partial', label: 'In Progress', variant: 'default' as const };
   };
 
-  const pendingContacts = contacts.filter(c => c.drafts.length === 0);
-  const draftContacts = contacts.filter(c => c.drafts.length > 0 && c.drafts.some(d => d.status === 'draft'));
-  const readyContacts = contacts.filter(c => c.drafts.every(d => d.status === 'approved') && c.drafts.length > 0);
-  const sentContacts = contacts.filter(c => c.drafts.every(d => d.status === 'sent') && c.drafts.length > 0);
+  const filteredContacts = contacts.filter((contact) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (contact.name || '').toLowerCase().includes(q) ||
+      contact.email.toLowerCase().includes(q) ||
+      (contact.company || '').toLowerCase().includes(q)
+    );
+  });
+
+  const pendingContacts = filteredContacts.filter(c => c.drafts.length === 0);
+  const draftContacts = filteredContacts.filter(c => c.drafts.length > 0 && c.drafts.some(d => d.status === 'draft'));
+  const readyContacts = filteredContacts.filter(c => c.drafts.every(d => d.status === 'approved') && c.drafts.length > 0);
+  const sentContacts = filteredContacts.filter(c => c.drafts.every(d => d.status === 'sent') && c.drafts.length > 0);
+
+  const deleteContact = async (contactId: string) => {
+    if (!confirm('Delete this contact and all associated drafts? This cannot be undone.')) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from('contacts')
+      .delete()
+      .eq('id', contactId);
+
+    if (error) {
+      toast.error('Failed to delete contact');
+      return;
+    }
+
+    toast.success('Contact deleted');
+    setContacts((prev) => prev.filter((contact) => contact.id !== contactId));
+    setSelectedContacts((prev) => prev.filter((id) => id !== contactId));
+  };
 
   const handleSelectAll = (contactList: ContactWithDrafts[]) => {
     const allSelected = contactList.every(c => selectedContacts.includes(c.id));
@@ -623,6 +667,20 @@ export default function UploadContacts() {
               </div>
             ) : (
               <>
+                <Card className="bg-card border-border">
+                  <CardContent className="p-4">
+                    <div className="relative max-w-md">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search contacts by name, email, or company"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 bg-input border-border"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
                 {/* Summary Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Card className="bg-card border-border">
@@ -759,6 +817,17 @@ export default function UploadContacts() {
                                 <span className="text-xs text-muted-foreground">{contact.company}</span>
                               )}
                               <Badge variant="secondary">No Drafts</Badge>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  deleteContact(contact.id);
+                                }}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
                             </div>
                           </div>
                         ))}
@@ -801,6 +870,14 @@ export default function UploadContacts() {
                                   <Eye className="w-4 h-4 mr-1" />
                                   Review
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteContact(contact.id)}
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
                               </div>
                             </div>
                           );
@@ -827,7 +904,17 @@ export default function UploadContacts() {
                               <p className="font-medium text-foreground">{contact.name || 'Unknown'}</p>
                               <p className="text-sm text-muted-foreground">{contact.email}</p>
                             </div>
-                            <Badge variant="gold">Approved</Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="gold">Approved</Badge>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deleteContact(contact.id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>

@@ -14,8 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
-        serif: ['Playfair Display', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Source Sans 3', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        serif: ['Cormorant Garamond', 'Georgia', 'Times New Roman', 'serif'],
       },
       colors: {
         border: "hsl(var(--border))",

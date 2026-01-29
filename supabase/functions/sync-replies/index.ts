@@ -132,7 +132,20 @@ serve(async (req) => {
           continue;
         }
 
-        // Find or create contact
+        // Find the most recent sent email to this contact
+        const sentRes = await fetch(
+          `${supabaseUrl}/rest/v1/sent_emails?recipient_email=ilike.${encodeURIComponent(fromEmail)}&order=sent_at.desc&limit=1`,
+          { headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey } }
+        );
+        const sentEmails = await sentRes.json();
+        const sentEmail = sentEmails?.[0] || null;
+
+        if (!sentEmail) {
+          skipped++;
+          continue;
+        }
+
+        // Find or create contact (only after confirming sent email exists)
         const contactRes = await fetch(
           `${supabaseUrl}/rest/v1/contacts?email=ilike.${encodeURIComponent(fromEmail)}&select=id,email,name`,
           { headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey } }
@@ -163,19 +176,6 @@ serve(async (req) => {
         }
 
         if (!contact) continue;
-
-        // Find the most recent sent email to this contact
-        const sentRes = await fetch(
-          `${supabaseUrl}/rest/v1/sent_emails?recipient_email=ilike.${encodeURIComponent(fromEmail)}&order=sent_at.desc&limit=1`,
-          { headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey } }
-        );
-        const sentEmails = await sentRes.json();
-        const sentEmail = sentEmails?.[0] || null;
-
-        if (!sentEmail) {
-          skipped++;
-          continue;
-        }
 
         await fetch(`${supabaseUrl}/rest/v1/email_replies`, {
           method: 'POST',

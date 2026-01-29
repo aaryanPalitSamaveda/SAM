@@ -5,6 +5,117 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const parsePipeRow = (line: string) =>
+  line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+
+const isMarkdownTableSeparator = (line: string) =>
+  /^(\|?\s*:?-+:?\s*)+\|?$/.test(line.trim());
+
+const isMarkdownTableRow = (line: string) =>
+  line.includes('|') && !isMarkdownTableSeparator(line);
+
+const isAsciiBorder = (line: string) => /^\+[-+]+\+$/.test(line.trim());
+
+const isAsciiRow = (line: string) => /^\|.*\|$/.test(line.trim());
+
+const convertTablesToHtml = (body: string) => {
+  const lines = body.split('\n');
+  const output: string[] = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    if (isMarkdownTableRow(line) && isMarkdownTableSeparator(lines[i + 1] || '')) {
+      const header = parsePipeRow(line);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && isMarkdownTableRow(lines[i])) {
+        rows.push(parsePipeRow(lines[i]));
+        i += 1;
+      }
+      i -= 1;
+
+      const thead = `<thead><tr>${header
+        .map((cell) => `<th>${escapeHtml(cell)}</th>`)
+        .join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows
+        .map(
+          (row) =>
+            `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`
+        )
+        .join('')}</tbody>`;
+      output.push(`<table border="1" cellpadding="6" cellspacing="0">${thead}${tbody}</table>`);
+      continue;
+    }
+
+    if (isAsciiBorder(line) && isAsciiRow(lines[i + 1] || '')) {
+      const rows: string[][] = [];
+      let header: string[] | null = null;
+
+      i += 1;
+      while (i < lines.length) {
+        if (isAsciiRow(lines[i])) {
+          const cells = parsePipeRow(lines[i]);
+          if (!header) {
+            header = cells;
+          } else {
+            rows.push(cells);
+          }
+          i += 1;
+          continue;
+        }
+        if (isAsciiBorder(lines[i])) {
+          i += 1;
+          continue;
+        }
+        break;
+      }
+      i -= 1;
+
+      const thead = header
+        ? `<thead><tr>${header
+            .map((cell) => `<th>${escapeHtml(cell)}</th>`)
+            .join('')}</tr></thead>`
+        : '';
+      const tbody = `<tbody>${rows
+        .map(
+          (row) =>
+            `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`
+        )
+        .join('')}</tbody>`;
+      output.push(`<table border="1" cellpadding="6" cellspacing="0">${thead}${tbody}</table>`);
+      continue;
+    }
+
+    output.push(line);
+  }
+
+  return output.join('\n');
+};
+
+const convertMarkdownBold = (value: string) =>
+  value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+const normalizeEmailHtml = (body: string) => {
+  const withTables = convertTablesToHtml(body || '');
+  const withBold = convertMarkdownBold(withTables);
+  if (withBold.includes('<table')) return withBold;
+  return withBold.replace(/\n/g, '<br>');
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -157,12 +268,13 @@ serve(async (req) => {
         }
 
         // Send email via Microsoft Graph
+        const emailHtml = normalizeEmailHtml(emailContent);
         const emailBody = {
           message: {
             subject: draft.edited_subject || draft.subject,
             body: {
               contentType: 'HTML',
-              content: `${emailContent.replace(/\n/g, '<br>')}<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;" alt="" />`,
+              content: `${emailHtml}<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;" alt="" />`,
             },
             toRecipients: [{ emailAddress: { address: draft.contact.email } }],
             ...(inlineAttachment ? { attachments: [inlineAttachment] } : {}),
