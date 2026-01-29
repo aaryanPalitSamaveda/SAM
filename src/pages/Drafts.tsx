@@ -202,8 +202,33 @@ export default function Drafts() {
     if (!body) return '';
     const withTables = convertTablesToHtml(body);
     const withBold = convertMarkdownBold(withTables);
-    if (withBold.includes('<table')) return withBold;
-    return withBold.replace(/\n/g, '<br>');
+    const cleaned = withBold.replace(/not disclosed/gi, '');
+    const blocks = cleaned.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+    const htmlBlocks = blocks.map((block) => {
+      if (block.includes('<table')) {
+        return `<div style="margin:16px 0;">${block}</div>`;
+      }
+
+      const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+      const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+      const allBullets = bulletLines.length === lines.length && lines.length > 0;
+
+      if (allBullets) {
+        const items = lines
+          .map((line) => line.replace(/^[-*]\s+/, ''))
+          .map((item) => `<li style="margin:0 0 6px;">${item}</li>`)
+          .join('');
+        return `<ul style="margin:8px 0 12px 18px; padding:0;">${items}</ul>`;
+      }
+
+      if (lines.length === 1 && /:$/.test(lines[0])) {
+        return `<p style="margin:0 0 10px;"><strong>${lines[0]}</strong></p>`;
+      }
+
+      return `<p style="margin:0 0 12px;">${lines.join('<br>')}</p>`;
+    });
+
+    return `<div style="font-family:inherit; font-size:14px; line-height:1.55;">${htmlBlocks.join('')}</div>`;
   };
 
   const generateDrafts = async () => {

@@ -109,6 +109,93 @@ const convertTablesToHtml = (body: string) => {
 const convertMarkdownBold = (value: string) =>
   value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
+const convertTabTablesToHtml = (body: string) => {
+  const lines = body.split('\n');
+  const output: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const isTabRow = line.includes('\t');
+    const nextIsTabRow = (lines[i + 1] || '').includes('\t');
+
+    if (isTabRow && nextIsTabRow) {
+      const header = line.split('\t').map((cell) => cell.trim());
+      const rows: string[][] = [];
+      i += 1;
+      while (i < lines.length && lines[i].includes('\t')) {
+        rows.push(lines[i].split('\t').map((cell) => cell.trim()));
+        i += 1;
+      }
+
+      const thead = `<thead><tr>${header
+        .map((cell) => `<th>${escapeHtml(cell)}</th>`)
+        .join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows
+        .map(
+          (row) =>
+            `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`
+        )
+        .join('')}</tbody>`;
+      output.push(`<table border="1" cellpadding="6" cellspacing="0">${thead}${tbody}</table>`);
+      continue;
+    }
+
+    output.push(line);
+    i += 1;
+  }
+
+  return output.join('\n');
+};
+
+const ensureEmailSpacing = (value: string) => {
+  if (!value) return value;
+  let text = value.replace(/\r\n/g, '\n').trim();
+  text = text.replace(/•\s+/g, '- ');
+  text = text.replace(/\n?<table/g, '\n\n<table');
+  text = text.replace(/<\/table>\n?/g, '</table>\n\n');
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/([^\n])\n((?:Deal Snapshot|Exit Reason|V3 Synergies|Financial Highlights|Stage|Next Steps|Why Exit|Why [A-Z][A-Za-z]+|Score Breakdown):)/g, '$1\n\n$2');
+  text = text.replace(/([^\n])\n([*-]\s+)/g, '$1\n\n$2');
+  text = text.replace(/([^\n])\n([^\n])/g, '$1\n\n$2');
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+};
+
+const formatEmailHtml = (body: string) => {
+  const spaced = ensureEmailSpacing(body || '');
+  const withoutNotDisclosed = spaced.replace(/not disclosed/gi, '');
+  const withTables = convertTablesToHtml(convertTabTablesToHtml(withoutNotDisclosed || ''));
+  const withBold = convertMarkdownBold(withTables);
+  const blocks = withBold.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+
+  const htmlBlocks = blocks.map((block) => {
+    if (block.includes('<table')) {
+      return `<div style="margin:16px 0;">${block}</div>`;
+    }
+
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+    const allBullets = bulletLines.length === lines.length && lines.length > 0;
+
+    if (allBullets) {
+      const items = lines
+        .map((line) => line.replace(/^[-*]\s+/, ''))
+        .map((item) => `<li style="margin:0 0 6px;">${item}</li>`)
+        .join('');
+      return `<ul style="margin:8px 0 12px 18px; padding:0;">${items}</ul>`;
+    }
+
+    if (lines.length === 1 && /:$/.test(lines[0])) {
+      return `<p style="margin:0 0 10px;"><strong>${lines[0]}</strong></p>`;
+    }
+
+    return `<p style="margin:0 0 12px;">${lines.join('<br>')}</p>`;
+  });
+
+  return `<div style="font-family:inherit; font-size:14px; line-height:1.55;">${htmlBlocks.join('')}</div>`;
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -181,22 +268,79 @@ serve(async (req) => {
     const tokenData = await tokenRes.json();
     const accessToken = tokenData.access_token;
 
+    const sentEmailId = crypto.randomUUID();
+    const trackingPixelUrl = `${supabaseUrl}/functions/v1/track-open?sent_email_id=${encodeURIComponent(sentEmailId)}`;
+
+    // Get signature if enabled
+    let emailContent = draft.edited_body || draft.body;
+    let signatureId = null;
+    let inlineAttachment: any = null;
+
+    const buildSignatureContent = (signature: any) => {
+      let sigContent = signature.content;
+      let attachment: Record<string, unknown> | null = null;
+
+      if (signature.image_url) {
+        const dataUrlMatch = signature.image_url.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.*)$/);
+        if (dataUrlMatch) {
+          const contentType = dataUrlMatch[1];
+          const contentBytes = dataUrlMatch[2];
+          const contentId = `signature-logo-${signature.id}`;
+          attachment = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            name: "signature-logo",
+            contentType,
+            contentBytes,
+            isInline: true,
+            contentId,
+          };
+          sigContent = `${sigContent}<br><br><img src="cid:${contentId}" alt="Logo" style="max-height: 60px;" />`;
+        } else {
+          sigContent = `${sigContent}<br><br><img src="${signature.image_url}" alt="Logo" style="max-height: 60px;" />`;
+        }
+      }
+
+      return { sigContent, attachment };
+    };
+
+    if (draft.include_signature !== false && draft.signature_id) {
+      const sigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?id=eq.${draft.signature_id}`, {
+        headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey! },
+      });
+      const signatures = await sigRes.json();
+      if (signatures && signatures.length > 0) {
+        const signature = signatures[0];
+        const { sigContent, attachment } = buildSignatureContent(signature);
+        emailContent = `${emailContent}\n\n---\n${sigContent}`;
+        signatureId = signature.id;
+        inlineAttachment = attachment;
+      }
+    } else if (draft.include_signature !== false) {
+      const defaultSigRes = await fetch(`${supabaseUrl}/rest/v1/email_signatures?is_default=eq.true&limit=1`, {
+        headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey! },
+      });
+      const defaultSigs = await defaultSigRes.json();
+      if (defaultSigs && defaultSigs.length > 0) {
+        const signature = defaultSigs[0];
+        const { sigContent, attachment } = buildSignatureContent(signature);
+        emailContent = `${emailContent}\n\n---\n${sigContent}`;
+        signatureId = signature.id;
+        inlineAttachment = attachment;
+      }
+    }
+
     // Send email via Microsoft Graph
-    const rawBody = draft.edited_body || draft.body;
-    const tableConverted = convertTablesToHtml(rawBody || '');
-    const boldConverted = convertMarkdownBold(tableConverted);
-    const htmlBody = boldConverted.includes('<table')
-      ? boldConverted
-      : boldConverted.replace(/\n/g, '<br>');
+    const htmlBody = formatEmailHtml(emailContent || '');
 
     const emailBody = {
       message: {
         subject: draft.edited_subject || draft.subject,
         body: {
           contentType: 'HTML',
-          content: htmlBody,
+          content: `${htmlBody}<img src="${trackingPixelUrl}" width="1" height="1" style="display:none;" alt="" />`,
         },
         toRecipients: [{ emailAddress: { address: draft.contact.email } }],
+        ...(inlineAttachment ? { attachments: [inlineAttachment] } : {}),
       },
       saveToSentItems: true,
     };
@@ -239,6 +383,7 @@ serve(async (req) => {
         subject: draft.edited_subject || draft.subject,
         body: htmlBody,
         recipient_email: draft.contact.email,
+        signature_id: signatureId,
       }),
     });
 

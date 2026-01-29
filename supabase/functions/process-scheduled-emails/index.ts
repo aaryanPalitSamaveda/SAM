@@ -109,11 +109,91 @@ const convertTablesToHtml = (body: string) => {
 const convertMarkdownBold = (value: string) =>
   value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-const normalizeEmailHtml = (body: string) => {
-  const withTables = convertTablesToHtml(body || '');
+const convertTabTablesToHtml = (body: string) => {
+  const lines = body.split('\n');
+  const output: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const isTabRow = line.includes('\t');
+    const nextIsTabRow = (lines[i + 1] || '').includes('\t');
+
+    if (isTabRow && nextIsTabRow) {
+      const header = line.split('\t').map((cell) => cell.trim());
+      const rows: string[][] = [];
+      i += 1;
+      while (i < lines.length && lines[i].includes('\t')) {
+        rows.push(lines[i].split('\t').map((cell) => cell.trim()));
+        i += 1;
+      }
+
+      const thead = `<thead><tr>${header
+        .map((cell) => `<th>${escapeHtml(cell)}</th>`)
+        .join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows
+        .map(
+          (row) =>
+            `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`
+        )
+        .join('')}</tbody>`;
+      output.push(`<table border="1" cellpadding="6" cellspacing="0">${thead}${tbody}</table>`);
+      continue;
+    }
+
+    output.push(line);
+    i += 1;
+  }
+
+  return output.join('\n');
+};
+
+const ensureEmailSpacing = (value: string) => {
+  if (!value) return value;
+  let text = value.replace(/\r\n/g, '\n').trim();
+  text = text.replace(/•\s+/g, '- ');
+  text = text.replace(/\n?<table/g, '\n\n<table');
+  text = text.replace(/<\/table>\n?/g, '</table>\n\n');
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/([^\n])\n((?:Deal Snapshot|Exit Reason|V3 Synergies|Financial Highlights|Stage|Next Steps|Why Exit|Why [A-Z][A-Za-z]+|Score Breakdown):)/g, '$1\n\n$2');
+  text = text.replace(/([^\n])\n([*-]\s+)/g, '$1\n\n$2');
+  text = text.replace(/([^\n])\n([^\n])/g, '$1\n\n$2');
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+};
+
+const formatEmailHtml = (body: string) => {
+  const spaced = ensureEmailSpacing(body || '');
+  const withoutNotDisclosed = spaced.replace(/not disclosed/gi, '');
+  const withTables = convertTablesToHtml(convertTabTablesToHtml(withoutNotDisclosed || ''));
   const withBold = convertMarkdownBold(withTables);
-  if (withBold.includes('<table')) return withBold;
-  return withBold.replace(/\n/g, '<br>');
+  const blocks = withBold.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+
+  const htmlBlocks = blocks.map((block) => {
+    if (block.includes('<table')) {
+      return `<div style="margin:16px 0;">${block}</div>`;
+    }
+
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+    const allBullets = bulletLines.length === lines.length && lines.length > 0;
+
+    if (allBullets) {
+      const items = lines
+        .map((line) => line.replace(/^[-*]\s+/, ''))
+        .map((item) => `<li style="margin:0 0 6px;">${item}</li>`)
+        .join('');
+      return `<ul style="margin:8px 0 12px 18px; padding:0;">${items}</ul>`;
+    }
+
+    if (lines.length === 1 && /:$/.test(lines[0])) {
+      return `<p style="margin:0 0 10px;"><strong>${lines[0]}</strong></p>`;
+    }
+
+    return `<p style="margin:0 0 12px;">${lines.join('<br>')}</p>`;
+  });
+
+  return `<div style="font-family:inherit; font-size:14px; line-height:1.55;">${htmlBlocks.join('')}</div>`;
 };
 
 serve(async (req) => {
@@ -271,7 +351,7 @@ serve(async (req) => {
         }
 
         // Send email via Microsoft Graph
-            const emailHtml = normalizeEmailHtml(emailContent);
+            const emailHtml = formatEmailHtml(emailContent);
             const emailBody = {
           message: {
             subject: draft.edited_subject || draft.subject,
