@@ -33,6 +33,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchStats = async () => {
@@ -42,18 +44,30 @@ export default function Dashboard() {
         supabase.from('email_drafts').select('id', { count: 'exact', head: true }),
         supabase.from('email_drafts').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
         supabase.from('sent_emails').select('id', { count: 'exact', head: true }),
-        supabase.from('email_opens' as any).select('id', { count: 'exact', head: true }),
-        supabase.from('email_replies' as any).select('id', { count: 'exact', head: true }).not('sent_email_id', 'is', null),
+        supabase.from('email_opens' as any).select('sent_email_id'),
+        supabase.from('email_replies' as any).select('message_id').not('sent_email_id', 'is', null),
         supabase.from('scheduled_emails').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       ]);
+
+      const uniqueOpenedEmails = new Set(
+        (openedRes?.data || [])
+          .map((row: any) => row?.sent_email_id)
+          .filter(Boolean)
+      );
+
+      const uniqueReplies = new Set(
+        (repliesRes?.data || [])
+          .map((row: any) => row?.message_id)
+          .filter(Boolean)
+      );
 
       setStats({
         totalContacts: contactsRes.count || 0,
         totalDrafts: draftsRes.count || 0,
         pendingApproval: pendingRes.count || 0,
         totalSent: sentRes.count || 0,
-        totalOpened: openedRes.count || 0,
-        totalReplies: repliesRes.count || 0,
+        totalOpened: uniqueOpenedEmails.size,
+        totalReplies: uniqueReplies.size,
         scheduledEmails: scheduledRes.count || 0,
       });
     } catch (error) {

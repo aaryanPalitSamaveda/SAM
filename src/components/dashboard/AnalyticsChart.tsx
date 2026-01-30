@@ -10,6 +10,8 @@ export function AnalyticsChart() {
 
   useEffect(() => {
     fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchAnalytics = async () => {

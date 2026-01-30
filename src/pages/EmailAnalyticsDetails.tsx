@@ -25,6 +25,8 @@ export default function EmailAnalyticsDetails() {
 
   useEffect(() => {
     fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchAnalytics = async () => {
@@ -36,13 +38,11 @@ export default function EmailAnalyticsDetails() {
         .order('sent_at', { ascending: false })
         .limit(200);
 
-      const sentEmailIds = (sentData || []).map((email) => email.id);
-
       const { data: openData } = await supabase
         .from('email_opens' as any)
         .select('*, sent_email:sent_emails(subject, recipient_email), contact:contacts(name, email)')
-        .in('sent_email_id', sentEmailIds)
-        .order('opened_at', { ascending: false });
+        .order('opened_at', { ascending: false })
+        .limit(200);
 
       const { data: replyData } = await supabase
         .from('email_replies' as any)
@@ -51,15 +51,27 @@ export default function EmailAnalyticsDetails() {
         .order('received_at', { ascending: false })
         .limit(200);
 
-      const openCounts = (openData || []).reduce<Record<string, number>>((acc, open) => {
-        acc[open.sent_email_id] = (acc[open.sent_email_id] || 0) + 1;
+      const normalizeIp = (ip: string | null | undefined) => (ip || '').split(',')[0].trim();
+      const isProxyAgent = (ua: string | null | undefined) =>
+        /googleimageproxy|outlook/i.test(ua || '');
+
+      const openCounts = (openData || []).reduce<Record<string, Set<string>>>((acc, open) => {
+        const emailId = open.sent_email_id;
+        if (!emailId) return acc;
+        const ua = open.user_agent as string | null | undefined;
+        const ip = normalizeIp(open.ip_address as string | null | undefined);
+        const proxyKey = isProxyAgent(ua) ? `proxy:${ua?.toLowerCase() || 'unknown'}` : null;
+        const dedupeKey = proxyKey || `${ua || 'unknown'}|${ip || 'unknown'}`;
+
+        if (!acc[emailId]) acc[emailId] = new Set();
+        acc[emailId].add(dedupeKey);
         return acc;
       }, {});
 
       setSentEmails(
         (sentData || []).map((email) => ({
           ...(email as SentEmail),
-          openCount: openCounts[email.id] || 0,
+          openCount: openCounts[email.id]?.size || 0,
         }))
       );
       setOpens((openData || []) as EmailOpen[]);

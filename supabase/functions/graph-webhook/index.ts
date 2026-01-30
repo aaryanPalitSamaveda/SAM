@@ -197,6 +197,19 @@ serve(async (req) => {
         continue;
       }
 
+      const messageKey = message?.internetMessageId || messageId;
+      if (messageKey) {
+        const existingReplyRes = await fetch(
+          `${supabaseUrl}/rest/v1/email_replies?message_id=eq.${encodeURIComponent(messageKey)}&select=id&limit=1`,
+          { headers: { 'Authorization': `Bearer ${supabaseKey}`, 'apikey': supabaseKey } }
+        );
+        const existingReplies = await existingReplyRes.json();
+        if (existingReplies?.length) {
+          console.log('Skipping reply: already recorded', { messageKey });
+          continue;
+        }
+      }
+
       // Insert reply record
       const replyRes = await fetch(`${supabaseUrl}/rest/v1/email_replies`, {
         method: 'POST',
@@ -208,7 +221,7 @@ serve(async (req) => {
         body: JSON.stringify({
           sent_email_id: sentEmail?.id || null,
           contact_id: contact.id,
-          message_id: message?.internetMessageId || messageId,
+          message_id: messageKey,
           received_at: message?.receivedDateTime || new Date().toISOString(),
           subject: message?.subject || null,
           snippet: message?.bodyPreview || null,

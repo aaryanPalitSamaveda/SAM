@@ -48,6 +48,76 @@ export default function SentEmails() {
     }
   };
 
+  const stripHtml = (value: string) => value.replace(/<[^>]+>/g, '').trim();
+
+  const styleTableHtml = (html: string) => {
+    let styled = html;
+    styled = styled.replace(/<table\b[^>]*>/i, (match) => {
+      const tableStyle = 'width:100%; border-collapse:collapse; border:1px solid #d1d5db;';
+      if (/style=/.test(match)) {
+        return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${tableStyle}"`);
+      }
+      return match.replace('<table', `<table style="${tableStyle}"`);
+    });
+    styled = styled.replace(/<th\b[^>]*>/gi, (match) => {
+      const thStyle = 'background:#6b7280; color:#ffffff; text-align:left; padding:8px; border:1px solid #d1d5db;';
+      if (/style=/.test(match)) {
+        return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${thStyle}"`);
+      }
+      return match.replace('<th', `<th style="${thStyle}"`);
+    });
+    styled = styled.replace(/<td\b[^>]*>/gi, (match) => {
+      const tdStyle = 'background:#ffffff; color:#111827; padding:8px; border:1px solid #e5e7eb;';
+      if (/style=/.test(match)) {
+        return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${tdStyle}"`);
+      }
+      return match.replace('<td', `<td style="${tdStyle}"`);
+    });
+    return styled;
+  };
+
+  const normalizeMatchScoreTables = (html: string) => {
+    return (html || '').replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+      const rows = tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+      const headerIndex = rows.findIndex((row) => /<th/i.test(row));
+      if (headerIndex === -1) return tableHtml;
+
+      const headerRow = rows[headerIndex];
+      const headerCells = headerRow.match(/<th[^>]*>[\s\S]*?<\/th>/gi) || [];
+      const headers = headerCells.map((cell) => stripHtml(cell).toLowerCase());
+      const matchIndex = headers.findIndex((label) => label.includes('match score'));
+      if (matchIndex === -1) return tableHtml;
+
+      const updatedRows = rows.map((row, idx) => {
+        if (idx <= headerIndex) return row;
+        const cells = row.match(/<td[^>]*>[\s\S]*?<\/td>/gi);
+        if (!cells || matchIndex >= cells.length) return row;
+        const targetCell = cells[matchIndex];
+        const cellMatch = targetCell.match(/^<td([^>]*)>([\s\S]*?)<\/td>$/i);
+        if (!cellMatch) return row;
+        const attrs = cellMatch[1] || '';
+        const content = stripHtml(cellMatch[2]);
+        if (!content || !/\d/.test(content)) return row;
+
+        const normalizedValue = /%$/.test(content) ? content : `${content}%`;
+        const updatedCell = `<td${attrs}>Match Score: ${normalizedValue}</td>`;
+        const updatedCells = [...cells];
+        updatedCells[matchIndex] = updatedCell;
+        let rebuiltRow = row;
+        cells.forEach((cell, cellIndex) => {
+          rebuiltRow = rebuiltRow.replace(cell, updatedCells[cellIndex]);
+        });
+        return rebuiltRow;
+      });
+
+      let updatedTable = tableHtml;
+      rows.forEach((row, index) => {
+        updatedTable = updatedTable.replace(row, updatedRows[index]);
+      });
+      return updatedTable;
+    });
+  };
+
   const getSignatureHtml = (signatureId?: string | null) => {
     if (!signatureId) return '';
     const signature = signatures.find((s) => s.id === signatureId);
@@ -61,10 +131,15 @@ export default function SentEmails() {
 
   const getDisplayBodyHtml = (email: SentEmail) => {
     const signature = signatures.find((s) => s.id === email.signature_id);
-    const baseBody = (email.body || '').replace(/\n/g, '<br>');
+    let baseBody = email.body || '';
+    const hasHtmlTags = /<\w+[^>]*>/.test(baseBody);
+    if (!hasHtmlTags) {
+      baseBody = baseBody.replace(/\n/g, '<br>');
+    }
 
     if (!signature) {
-      return baseBody;
+      const normalized = normalizeMatchScoreTables(baseBody);
+      return normalized.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => styleTableHtml(tableHtml));
     }
 
     const hasSignature =
@@ -80,12 +155,18 @@ export default function SentEmails() {
     }
 
     if (hasSignature) {
-      return updatedBody;
+      const normalized = normalizeMatchScoreTables(updatedBody);
+      return normalized.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => styleTableHtml(tableHtml));
     }
 
     const signatureHtml = getSignatureHtml(email.signature_id);
-    if (!signatureHtml) return updatedBody;
-    return `${updatedBody}<br><br>---<br>${signatureHtml}`;
+    if (!signatureHtml) {
+      const normalized = normalizeMatchScoreTables(updatedBody);
+      return normalized.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => styleTableHtml(tableHtml));
+    }
+    const withSignature = `${updatedBody}<br><br>---<br>${signatureHtml}`;
+    const normalized = normalizeMatchScoreTables(withSignature);
+    return normalized.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => styleTableHtml(tableHtml));
   };
 
   const getDraftTypeLabel = (type: string) => {

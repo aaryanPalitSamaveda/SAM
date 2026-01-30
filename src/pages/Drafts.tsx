@@ -198,15 +198,92 @@ export default function Drafts() {
   const convertMarkdownBold = (value: string) =>
     value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
+  const styleTableHtml = (html: string) => {
+    let styled = html;
+    styled = styled.replace(/<table\b[^>]*>/i, (match) => {
+      const tableStyle = 'width:100%; border-collapse:collapse; border:1px solid #d1d5db;';
+      if (/style=/.test(match)) {
+        return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${tableStyle}"`);
+      }
+      return match.replace('<table', `<table style="${tableStyle}"`);
+    });
+    styled = styled.replace(/<th\b[^>]*>/gi, (match) => {
+      const thStyle = 'background:#6b7280; color:#ffffff; text-align:left; padding:8px; border:1px solid #d1d5db;';
+      if (/style=/.test(match)) {
+        return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${thStyle}"`);
+      }
+      return match.replace('<th', `<th style="${thStyle}"`);
+    });
+    styled = styled.replace(/<td\b[^>]*>/gi, (match) => {
+      const tdStyle = 'background:#ffffff; color:#111827; padding:8px; border:1px solid #e5e7eb;';
+      if (/style=/.test(match)) {
+        return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${tdStyle}"`);
+      }
+      return match.replace('<td', `<td style="${tdStyle}"`);
+    });
+    return styled;
+  };
+
+  const stripHtml = (value: string) => value.replace(/<[^>]+>/g, '').trim();
+
+  const normalizeMatchScoreTables = (html: string) => {
+    return (html || '').replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+      const rows = tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+      const headerIndex = rows.findIndex((row) => /<th/i.test(row));
+      if (headerIndex === -1) return tableHtml;
+
+      const headerRow = rows[headerIndex];
+      const headerCells = headerRow.match(/<th[^>]*>[\s\S]*?<\/th>/gi) || [];
+      const headers = headerCells.map((cell) => stripHtml(cell).toLowerCase());
+      const matchIndex = headers.findIndex((label) => label.includes('match score'));
+      if (matchIndex === -1) return tableHtml;
+
+      const updatedRows = rows.map((row, idx) => {
+        if (idx <= headerIndex) return row;
+        const cells = row.match(/<td[^>]*>[\s\S]*?<\/td>/gi);
+        if (!cells || matchIndex >= cells.length) return row;
+        const targetCell = cells[matchIndex];
+        const cellMatch = targetCell.match(/^<td([^>]*)>([\s\S]*?)<\/td>$/i);
+        if (!cellMatch) return row;
+        const attrs = cellMatch[1] || '';
+        const content = stripHtml(cellMatch[2]);
+        if (!content || !/\d/.test(content)) return row;
+
+        const normalizedValue = /%$/.test(content) ? content : `${content}%`;
+        const updatedCell = `<td${attrs}>Match Score: ${normalizedValue}</td>`;
+        const updatedCells = [...cells];
+        updatedCells[matchIndex] = updatedCell;
+        let rebuiltRow = row;
+        cells.forEach((cell, cellIndex) => {
+          rebuiltRow = rebuiltRow.replace(cell, updatedCells[cellIndex]);
+        });
+        return rebuiltRow;
+      });
+
+      let updatedTable = tableHtml;
+      rows.forEach((row, index) => {
+        updatedTable = updatedTable.replace(row, updatedRows[index]);
+      });
+      return updatedTable;
+    });
+  };
+
   const normalizeEmailHtml = (body: string) => {
     if (!body) return '';
     const withTables = convertTablesToHtml(body);
     const withBold = convertMarkdownBold(withTables);
-    const cleaned = withBold.replace(/not disclosed/gi, '');
-    const blocks = cleaned.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+    const cleaned = normalizeMatchScoreTables(withBold.replace(/not disclosed/gi, ''));
+    const tablePlaceholders: string[] = [];
+    const withStyledTables = cleaned.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+      const key = `__TABLE_${tablePlaceholders.length}__`;
+      tablePlaceholders.push(styleTableHtml(tableHtml));
+      return key;
+    });
+    const blocks = withStyledTables.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
     const htmlBlocks = blocks.map((block) => {
-      if (block.includes('<table')) {
-        return `<div style="margin:16px 0;">${block}</div>`;
+      if (/__TABLE_\d+__/.test(block)) {
+        const resolved = block.replace(/__TABLE_(\d+)__/g, (_, index) => tablePlaceholders[Number(index)] || '');
+        return `<div style="margin:16px 0;">${resolved}</div>`;
       }
 
       const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);

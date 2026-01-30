@@ -200,8 +200,16 @@ const buildAllowedNumbers = (sources: string[]) => {
 };
 
 const sanitizeUnauthorizedNumbers = (text: string, allowed: Set<string>) => {
-  return text.replace(/-?\d[\d,]*\.?\d*/g, (match) => {
+  return text.replace(/-?\d[\d,]*\.?\d*/g, (match, offset, fullText) => {
     const normalized = match.replace(/,/g, '');
+    const contextStart = Math.max(0, offset - 20);
+    const contextEnd = Math.min(fullText.length, offset + match.length + 20);
+    const context = fullText.slice(contextStart, contextEnd);
+
+    if (/match score/i.test(context)) {
+      return match;
+    }
+
     return allowed.has(normalized) ? match : '';
   });
 };
@@ -209,6 +217,50 @@ const sanitizeUnauthorizedNumbers = (text: string, allowed: Set<string>) => {
 const removeNotDisclosedLines = (value: string) => {
   if (!value) return value;
   return value.replace(/not disclosed/gi, '');
+};
+
+const stripHtml = (value: string) => value.replace(/<[^>]+>/g, '').trim();
+
+const normalizeMatchScoreTables = (html: string) => {
+  return (html || '').replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+    const rows = tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+    const headerIndex = rows.findIndex((row) => /<th/i.test(row));
+    if (headerIndex === -1) return tableHtml;
+
+    const headerRow = rows[headerIndex];
+    const headerCells = headerRow.match(/<th[^>]*>[\s\S]*?<\/th>/gi) || [];
+    const headers = headerCells.map((cell) => stripHtml(cell).toLowerCase());
+    const matchIndex = headers.findIndex((label) => label.includes('match score'));
+    if (matchIndex === -1) return tableHtml;
+
+    const updatedRows = rows.map((row, idx) => {
+      if (idx <= headerIndex) return row;
+      const cells = row.match(/<td[^>]*>[\s\S]*?<\/td>/gi);
+      if (!cells || matchIndex >= cells.length) return row;
+      const targetCell = cells[matchIndex];
+      const cellMatch = targetCell.match(/^<td([^>]*)>([\s\S]*?)<\/td>$/i);
+      if (!cellMatch) return row;
+      const attrs = cellMatch[1] || '';
+      const content = stripHtml(cellMatch[2]);
+      if (!content || !/\d/.test(content)) return row;
+
+      const normalizedValue = /%$/.test(content) ? content : `${content}%`;
+      const updatedCell = `<td${attrs}>Match Score: ${normalizedValue}</td>`;
+      const updatedCells = [...cells];
+      updatedCells[matchIndex] = updatedCell;
+      let rebuiltRow = row;
+      cells.forEach((cell, cellIndex) => {
+        rebuiltRow = rebuiltRow.replace(cell, updatedCells[cellIndex]);
+      });
+      return rebuiltRow;
+    });
+
+    let updatedTable = tableHtml;
+    rows.forEach((row, index) => {
+      updatedTable = updatedTable.replace(row, updatedRows[index]);
+    });
+    return updatedTable;
+  });
 };
 
 const isSubjectPersonalized = (subject: string, contact: Contact) => {
@@ -220,7 +272,12 @@ const isSubjectPersonalized = (subject: string, contact: Contact) => {
 
 const hasRequiredTable = (body: string) => /<table/i.test(body || '');
 
-const hasMatchScore = (body: string) => /match score/i.test(body || '');
+const hasMatchScore = (body: string) => {
+  const text = body || '';
+  if (/match score\s*:\s*%/i.test(text)) return false;
+  const matches = text.match(/match score[^0-9]*\d{1,3}\s*%/gi) || [];
+  return matches.length >= 2;
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -305,7 +362,7 @@ Rules you MUST follow:
 - Use ONLY numbers and facts explicitly present in the Deal/Mandate Details. Never invent or guess.
 - Do NOT convert units (e.g., don't turn INR into Cr unless it appears that way in the deal doc).
 - If a specific metric is missing, omit that line entirely. Do not show "Not disclosed".
-- Include a "Match Score: X%" line for each of the top 2 deals; if no score is available, omit the score line.
+- Always include a "Match Score: X%" line for each of the top 2 deals. Never leave it blank.
 - Personalization must be grounded in Contact Information or Deal/Mandate Details only.
 - Use a clean structure with clear section headings, short paragraphs, and bullet points.
 - Add blank lines between sections so the email is easy to scan.
@@ -401,8 +458,8 @@ Return your response in this exact JSON format:
             });
           }
 
-          const normalizedBody = convertMarkdownBold(
-            convertTablesToHtml(convertTabTablesToHtml(spacedBody || ''))
+          const normalizedBody = normalizeMatchScoreTables(
+            convertMarkdownBold(convertTablesToHtml(convertTabTablesToHtml(spacedBody || '')))
           );
           const insertRes = await fetch(`${supabaseUrl}/rest/v1/email_drafts`, {
             method: 'POST',

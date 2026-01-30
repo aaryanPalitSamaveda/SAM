@@ -109,6 +109,32 @@ const convertTablesToHtml = (body: string) => {
 const convertMarkdownBold = (value: string) =>
   value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
+const styleTableHtml = (html: string) => {
+  let styled = html;
+  styled = styled.replace(/<table\b[^>]*>/i, (match) => {
+    const tableStyle = 'width:100%; border-collapse:collapse; border:1px solid #d1d5db;';
+    if (/style=/.test(match)) {
+      return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${tableStyle}"`);
+    }
+    return match.replace('<table', `<table style="${tableStyle}"`);
+  });
+  styled = styled.replace(/<th\b[^>]*>/gi, (match) => {
+    const thStyle = 'background:#6b7280; color:#ffffff; text-align:left; padding:8px; border:1px solid #d1d5db;';
+    if (/style=/.test(match)) {
+      return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${thStyle}"`);
+    }
+    return match.replace('<th', `<th style="${thStyle}"`);
+  });
+  styled = styled.replace(/<td\b[^>]*>/gi, (match) => {
+    const tdStyle = 'background:#ffffff; color:#111827; padding:8px; border:1px solid #e5e7eb;';
+    if (/style=/.test(match)) {
+      return match.replace(/style="([^"]*)"/i, (_, styles) => `style="${styles}; ${tdStyle}"`);
+    }
+    return match.replace('<td', `<td style="${tdStyle}"`);
+  });
+  return styled;
+};
+
 const convertTabTablesToHtml = (body: string) => {
   const lines = body.split('\n');
   const output: string[] = [];
@@ -167,11 +193,18 @@ const formatEmailHtml = (body: string) => {
   const withoutNotDisclosed = spaced.replace(/not disclosed/gi, '');
   const withTables = convertTablesToHtml(convertTabTablesToHtml(withoutNotDisclosed || ''));
   const withBold = convertMarkdownBold(withTables);
-  const blocks = withBold.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const tablePlaceholders: string[] = [];
+  const withStyledTables = withBold.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => {
+    const key = `__TABLE_${tablePlaceholders.length}__`;
+    tablePlaceholders.push(styleTableHtml(tableHtml));
+    return key;
+  });
+  const blocks = withStyledTables.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
 
   const htmlBlocks = blocks.map((block) => {
-    if (block.includes('<table')) {
-      return `<div style="margin:16px 0;">${block}</div>`;
+    if (/__TABLE_\d+__/.test(block)) {
+      const resolved = block.replace(/__TABLE_(\d+)__/g, (_, index) => tablePlaceholders[Number(index)] || '');
+      return `<div style="margin:16px 0;">${resolved}</div>`;
     }
 
     const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);

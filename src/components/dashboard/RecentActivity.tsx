@@ -10,6 +10,8 @@ export function RecentActivity() {
 
   useEffect(() => {
     fetchRecentEmails();
+    const interval = setInterval(fetchRecentEmails, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchRecentEmails = async () => {
